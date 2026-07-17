@@ -1,4 +1,4 @@
-import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Zap } from 'lucide-react';
+import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Zap, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 // --- UTILITY FUNCTIONS ---
@@ -35,6 +35,14 @@ const splitFaultName = (fullName) => {
   const category = matches[1].trim();
   const cause = matches[2] ? matches[2].trim() : "—";
   return { category, cause };
+};
+
+// Map raw issue name to clean main issue name
+const getCleanMainIssue = (fullName) => {
+  if (!fullName) return "";
+  const { category } = splitFaultName(fullName);
+  if (category === "Casting Faults") return "Casting Fault";
+  return category;
 };
 
 // Finds the month (YYYY-MM) that has the majority of days in a week starting on startMondayStr
@@ -160,7 +168,7 @@ export default function ProductionDashboard() {
   const previousWeek = currentWeekIndex > 0 ? weeklyData[currentWeekIndex - 1] : null;
 
   // Top operator by total incidents this week (backend already excludes
-  // no-issue / no-operator rows from operatorMatrix entirely)
+  // no-issue / no-genuine-stoppage rows from operatorMatrix entirely)
   const topOperator = currentWeek.operatorMatrix?.length > 0
     ? currentWeek.operatorMatrix[0]
     : { name: 'None', total: 0 };
@@ -195,28 +203,53 @@ export default function ProductionDashboard() {
   const faultCategories = currentWeek.whereTheHoursWent.map(f => f.name);
   const visibleHoursWent = currentWeek.whereTheHoursWent;
 
+  // FIX: operatorMatrix (fault attribution) and operatorCuts (cut attribution)
+  // are independent lists from the backend — an operator can appear in one
+  // without the other (e.g. a row had a real cut but no genuine logged
+  // fault on that same row, or vice versa). Union them by name so every
+  // operator who shows up in EITHER list gets a row in the table below,
+  // instead of silently dropping cut-only or fault-only operators.
+  const operatorRows = (() => {
+    const byName = {};
+
+    (currentWeek.operatorMatrix || []).forEach(op => {
+      byName[op.name] = { name: op.name, total: op.total, breakdown: op.breakdown, cuts: 0 };
+    });
+
+    (currentWeek.operatorCuts || []).forEach(op => {
+      if (byName[op.name]) {
+        byName[op.name].cuts = op.cuts;
+      } else {
+        byName[op.name] = { name: op.name, total: 0, breakdown: {}, cuts: op.cuts };
+      }
+    });
+
+    return Object.values(byName).sort((a, b) => b.total - a.total || b.cuts - a.cuts);
+  })();
+
   // Generates UI metadata (Tags and Subtitles) based on fault keywords
   const getFaultMetadata = (category, cause) => {
     const lowerCause = cause.toLowerCase();
     const lowerCategory = category.toLowerCase();
+    const fullText = `${lowerCategory} ${lowerCause}`;
 
-    if (lowerCause.includes('tuta') || lowerCause.includes('wire break')) {
-      return { tag: 'CHECK TENSION', tagColor: 'bg-red-100 text-red-800', desc: `${category} · entry guide tension suspected` };
+    if (fullText.includes('entry guide') || fullText.includes('tuta') || fullText.includes('wire break')) {
+      return { tag: 'CHECK TENSION', tagColor: 'bg-red-100 text-red-800', desc: 'Entry guide tension suspected' };
     }
-    if (lowerCause.includes('crack') || lowerCause.includes('kachra') || lowerCause.includes('ingot')) {
-      return { tag: 'FLAG TO PURCHASE', tagColor: 'bg-red-100 text-red-800', desc: `${category} · linked to ingot quality` };
+    if (fullText.includes('crack') || fullText.includes('kachra') || fullText.includes('ingot')) {
+      return { tag: 'FLAG TO PURCHASE', tagColor: 'bg-red-100 text-red-800', desc: 'Linked to ingot quality' };
     }
-    if (lowerCategory.includes('scheduled') || lowerCategory.includes('mold') || lowerCategory.includes('share pin')) {
-      return { tag: 'PLANNED', tagColor: 'bg-slate-100 text-slate-700', desc: `Not a fault — expected maintenance block` };
+    if (fullText.includes('scheduled') || fullText.includes('mold') || fullText.includes('share pin')) {
+      return { tag: 'PLANNED', tagColor: 'bg-slate-100 text-slate-700', desc: 'Not a fault — expected maintenance block' };
     }
-    if (lowerCategory.includes('stand')) {
-      return { tag: 'INSPECT STAND', tagColor: 'bg-red-100 text-red-800', desc: `${category} · repeat on same stand number` };
+    if (fullText.includes('stand')) {
+      return { tag: 'INSPECT STAND', tagColor: 'bg-red-100 text-red-800', desc: 'Repeat on same stand number' };
     }
-    if (lowerCategory.includes('belt')) {
-      return { tag: 'WEAR ITEM', tagColor: 'bg-slate-100 text-slate-700', desc: `${category} · within expected wear cycle` };
+    if (fullText.includes('belt')) {
+      return { tag: 'WEAR ITEM', tagColor: 'bg-slate-100 text-slate-700', desc: 'Within expected wear cycle' };
     }
 
-    return { tag: 'REVIEW', tagColor: 'bg-gray-100 text-gray-600', desc: `${category} · standard review required` };
+    return { tag: 'REVIEW', tagColor: 'bg-gray-100 text-gray-600', desc: 'Standard review required' };
   };
 
   // Generate dates for the week starting on Monday
@@ -315,11 +348,7 @@ export default function ProductionDashboard() {
                             role="menuitem"
                           >
                             <span>Week of {formatWeekDate(w.week)}</span>
-                            {isSelected && (
-                              <svg className="h-4 w-4 text-gray-900" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                              </svg>
-                            )}
+                            {isSelected && (<Check className="h-4 w-4 text-gray-900" />)}
                           </button>
                         );
                       })}
@@ -366,8 +395,8 @@ export default function ProductionDashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <p className="text-xl font-bold text-gray-900 truncate" title={topFault.name}>
-                {topFault.name !== 'None' ? topFault.name : 'No Faults'}
+              <p className="text-xl font-bold text-gray-900 truncate" title={getCleanMainIssue(topFault.name)}>
+                {topFault.name !== 'None' ? getCleanMainIssue(topFault.name) : 'No Faults'}
               </p>
               {topFault.name !== 'None' ? (
                 <span className="text-xs text-gray-500 font-medium">
@@ -455,29 +484,28 @@ export default function ProductionDashboard() {
           {/* Stoppage Breakdown (Where the Hours Went) - Tabular Form */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs overflow-hidden">
             <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
-              Where The Hours Went
+              Hours Lost Overview
             </h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-200/50">
                     <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs rounded-l-lg w-36">Hours Lost</th>
-                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs w-48">Category</th>
-                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs">Fault Cause</th>
+                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs">Category</th>
                     <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right rounded-r-lg w-36">Occurrences</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {visibleHoursWent.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500 italic">
+                      <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500 italic">
                         No specific faults recorded this week.
                       </td>
                     </tr>
                   ) : (
                     visibleHoursWent.map((fault, index) => {
                       const isHighest = index === 0;
-                      const { category, cause } = splitFaultName(fault.name);
+                      const cleanCategory = getCleanMainIssue(fault.name);
                       return (
                         <tr
                           key={index}
@@ -491,11 +519,8 @@ export default function ProductionDashboard() {
                           </td>
                           <td className="px-4 py-3.5 font-medium text-gray-600 text-sm">
                             <div className="flex items-center gap-2">
-                              <span>{category}</span>
+                              <span>{cleanCategory}</span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3.5 font-medium text-gray-600 text-sm">
-                            {cause}
                           </td>
                           <td className="px-4 py-3.5 text-right font-medium text-gray-500 text-sm">
                             {fault.occurrences} events
@@ -571,6 +596,145 @@ export default function ProductionDashboard() {
             </div>
           </div> */}
 
+          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
+            <div className="border-b border-gray-100 pb-4 mb-6">
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                Daily Downtime Analysis
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Left Side: Custom Column Chart */}
+              <div className="lg:col-span-8 flex flex-col justify-between">
+                {/* Chart Area */}
+                <div className="h-64 flex items-end gap-2 sm:gap-4 border-b border-gray-200 pb-2 relative">
+                  {/* Grid Lines background */}
+                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-8">
+                    {[1, 2, 3, 4].map((gridLineIndex) => (
+                      <div key={gridLineIndex} className="border-t border-dashed border-gray-100 w-full h-0" />
+                    ))}
+                  </div>
+
+                  {weekDaysData.map((day, index) => {
+                    const heightPercent = maxDailyHours > 0 ? (day.hours / maxDailyHours) * 100 : 0;
+
+                    // Severity colors for columns
+                    let barGradient = "from-emerald-400 to-teal-500";
+                    if (day.hours > 0 && day.hours <= 2) {
+                      barGradient = "from-amber-400 to-orange-500";
+                    } else if (day.hours > 2 && day.hours <= 6) {
+                      barGradient = "from-rose-400 to-red-500";
+                    } else if (day.hours > 6) {
+                      barGradient = "from-rose-600 to-red-700";
+                    }
+
+                    return (
+                      <div key={index} className="flex-1 flex flex-col items-center h-full group relative">
+                        {/* Tooltip on hover */}
+                        <div className="absolute -top-12 scale-0 group-hover:scale-100 transition-transform duration-200 bg-gray-950 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-md z-10 pointer-events-none whitespace-nowrap">
+                          {formatTime(day.hours)} lost
+                          <div className="w-2 h-2 bg-gray-950 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
+                        </div>
+
+                        {/* Visual Column Slot */}
+                        <div className="w-full bg-gray-50 hover:bg-gray-100/70 h-full rounded-t-lg relative transition-colors overflow-hidden flex items-end">
+                          {day.hours > 0 ? (
+                            <div
+                              className={`w-full bg-linear-to-t ${barGradient} rounded-t-md transition-all duration-1000 ease-out`}
+                              style={{ height: `${Math.max(heightPercent, 4)}%` }} // minimum 4% height to be visible
+                            />
+                          ) : (
+                            <div className="w-full h-1 bg-emerald-500 rounded-t-sm" /> // Flat green line for 0 downtime
+                          )}
+                        </div>
+
+                        {/* Day / Date labels */}
+                        <span className="text-[10px] font-bold text-gray-400 uppercase mt-2">
+                          {day.weekday}
+                        </span>
+                        <span className="text-[10px] font-semibold text-gray-500">
+                          {day.dateLabel.split(' ')[0]}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Side: Key Daily Metrics - Grid of Micro-cards */}
+              <div className="lg:col-span-4 flex flex-col justify-between">
+                <div className="flex flex-col h-full justify-between">
+                  <div className="border-b border-gray-100 pb-2 mb-4">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                      Downtime Metrics
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 flex-1">
+                    {/* Card 1: Stoppage Time */}
+                    <div className="bg-gray-50/50 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
+                      <div>
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          <ClockFading className="size-3.5 text-gray-400" />
+                          <span>Total Time</span>
+                        </div>
+                        <p className="text-base sm:text-lg font-black text-gray-900 mt-2">
+                          {formatTime(weekDaysData.reduce((acc, curr) => acc + curr.hours, 0))}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-medium">Stoppages sum</span>
+                    </div>
+
+                    {/* Card 2: Incidents */}
+                    <div className="bg-gray-50/50 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
+                      <div>
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          <CirclePause className="size-3.5 text-gray-400" />
+                          <span>Incidents</span>
+                        </div>
+                        <p className="text-base sm:text-lg font-black text-gray-900 mt-2">
+                          {currentWeek.totalStoppageCount} stops
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-medium">Weekly count</span>
+                    </div>
+                  </div>
+                  {/* Card 3: Peak Day */}
+                  <div className="bg-gray-50/50 my-2 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        <TriangleAlert className="size-3.5 text-amber-500" />
+                        <span>Peak Day</span>
+                      </div>
+                      <div className='flex w-full my-2 gap-2 items-center '>
+                        <div className="">
+                          {peakDay.hours > 0 ? (
+                            <p className="text-xs sm:text-sm font-extrabold text-gray-800 leading-tight">
+                              {peakDay.weekday} ({peakDay.dateLabel.split(' ')[0]})
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-500">None</p>
+                          )}
+                        </div>
+
+                        <div>
+                          {peakDay.hours > 0 ? (
+                            <span className="text-xs text-red-600 font-bold">
+                              {formatTime(peakDay.hours)} lost
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-400 font-medium">No downtime</span>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Operator Matrix Table */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs overflow-hidden">
             <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
@@ -585,13 +749,7 @@ export default function ProductionDashboard() {
                       <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-center">Faults</th>
                     ) : (
                       faultCategories.map(category => {
-                        // FIX: use the fault CAUSE (or full category if there's no
-                        // parenthetical cause) as the column header, instead of the
-                        // first word of the raw name. Prevents distinct categories
-                        // like "Belt Issues (Cut/Change)" and "Belt Change" from
-                        // both collapsing into a "Belt" column.
-                        const { category: catLabel, cause } = splitFaultName(category);
-                        const headerLabel = cause !== '—' ? cause : catLabel;
+                        const headerLabel = getCleanMainIssue(category);
                         return (
                           <th
                             key={category}
@@ -603,55 +761,51 @@ export default function ProductionDashboard() {
                         );
                       })
                     )}
-                    <th className="px-4 py-3.5 font-bold text-gray-900 uppercase tracking-wider text-xs text-right rounded-r-lg">
-                      Total Cuts
+                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right rounded-r-lg">
+                      Faults
                     </th>
-                    <th className="px-4 py-3.5 font-bold text-gray-900 uppercase tracking-wider text-xs text-right rounded-r-lg">
-                      Total Faults
+                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right rounded-r-lg">
+                      Cuts
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {currentWeek.operatorMatrix.length === 0 ? (
+                  {operatorRows.length === 0 ? (
                     <tr>
                       <td colSpan={faultCategories.length + 3} className="px-4 py-6 text-center text-sm text-gray-500 italic">
                         No operator records found.
                       </td>
                     </tr>
                   ) : (
-                    currentWeek.operatorMatrix.map((operator) => {
-                      const cutsRecord = currentWeek.operatorCuts?.find(c => c.name === operator.name);
-                      const cutsCount = cutsRecord ? cutsRecord.cuts : 0;
-                      return (
-                        <tr key={operator.name} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-4 font-bold text-gray-900">{operator.name}</td>
+                    operatorRows.map((operator) => (
+                      <tr key={operator.name} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4 font-bold text-gray-900">{operator.name}</td>
 
-                          {faultCategories.map(category => {
-                            const count = operator.breakdown[category] || 0;
-                            return (
-                              <td key={category} className="px-3 py-4 text-center">
-                                {count > 0 ? (
-                                  <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-bold px-2.5 py-0.5 rounded text-xs">
-                                    {count}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300 font-medium">—</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                          <td className="px-4 py-4 text-right font-bold text-emerald-750 text-base">{cutsCount}</td>
-                          <td className="px-4 py-4 text-right font-bold text-gray-900 text-base">{operator.total}</td>
-                        </tr>
-                      );
-                    })
+                        {faultCategories.map(category => {
+                          const count = operator.breakdown[category] || 0;
+                          return (
+                            <td key={category} className="px-3 py-4 text-center">
+                              {count > 0 ? (
+                                <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-bold px-2.5 py-0.5 rounded text-xs">
+                                  {count}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300 font-medium">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 py-4 text-right font-bold text-gray-900 text-base">{operator.total}</td>
+                        <td className="px-4 py-4 text-right font-bold text-emerald-750 text-base">{operator.cuts}</td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* --- TOP REASONS BEHIND THE BIGGEST CATEGORIES --- */}
+          {/* --- Reasons Overview --- */}
 
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
@@ -666,9 +820,7 @@ export default function ProductionDashboard() {
               ) : (
                 visibleHoursWent.map((fault, index) => {
                   const { category, cause } = splitFaultName(fault.name);
-
-                  // If there is a specific cause in parentheses, use it as the title. Otherwise use the category.
-                  const mainTitle = cause !== "—" ? cause : category;
+                  const mainTitle = getCleanMainIssue(fault.name);
                   const meta = getFaultMetadata(category, cause);
 
                   return (
@@ -684,9 +836,9 @@ export default function ProductionDashboard() {
                             {meta.tag}
                           </span> */}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        {/* <div className="text-xs text-gray-500">
                           {meta.desc}
-                        </div>
+                        </div> */}
                       </div>
 
                       {/* Right Side: Metrics */}
