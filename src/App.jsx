@@ -1,4 +1,4 @@
-import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Zap, Check } from 'lucide-react';
+import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 // --- UTILITY FUNCTIONS ---
@@ -96,6 +96,7 @@ export default function ProductionDashboard() {
   const [error, setError] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [expandedReason, setExpandedReason] = useState(null);
 
   const API_URL = import.meta.env.VITE_API_URL;
 
@@ -186,11 +187,7 @@ export default function ProductionDashboard() {
   }
   const isProdIncrease = prodHoursChange > 0;
 
-  let stoppagesChange = 0;
-  if (previousWeek && previousWeek.totalStoppageCount > 0) {
-    stoppagesChange = ((currentWeek.totalStoppageCount - previousWeek.totalStoppageCount) / previousWeek.totalStoppageCount) * 100;
-  }
-  const isStoppagesIncrease = stoppagesChange > 0;
+
 
   let cutsChange = 0;
   if (previousTotalCuts > 0) {
@@ -252,6 +249,39 @@ export default function ProductionDashboard() {
     return { tag: 'REVIEW', tagColor: 'bg-gray-100 text-gray-600', desc: 'Standard review required' };
   };
 
+  // Group the hours lost by their clean category
+  const groupedReasons = (() => {
+    const groups = {};
+    (currentWeek.whereTheHoursWent || []).forEach(fault => {
+      const cleanTitle = getCleanMainIssue(fault.name);
+      if (!groups[cleanTitle]) {
+        groups[cleanTitle] = {
+          title: cleanTitle,
+          totalHours: 0,
+          totalOccurrences: 0,
+          items: []
+        };
+      }
+      groups[cleanTitle].totalHours += fault.hours;
+      groups[cleanTitle].totalOccurrences += fault.occurrences;
+      groups[cleanTitle].items.push(fault);
+    });
+    return Object.values(groups).sort((a, b) => b.totalHours - a.totalHours);
+  })();
+
+  // Helper to get operator breakdown for a specific raw issue
+  const getOperatorBreakdownForIssue = (rawIssueName) => {
+    if (!currentWeek || !currentWeek.operatorMatrix) return [];
+    const operators = [];
+    currentWeek.operatorMatrix.forEach(op => {
+      const count = op.breakdown[rawIssueName];
+      if (count > 0) {
+        operators.push({ name: op.name, count });
+      }
+    });
+    return operators.sort((a, b) => b.count - a.count);
+  };
+
   // Generate dates for the week starting on Monday
   const generateWeekDates = (startMondayStr) => {
     if (!startMondayStr) return [];
@@ -286,9 +316,7 @@ export default function ProductionDashboard() {
     };
   }) : [];
 
-  const totalStoppageHours = weekDaysData.reduce((sum, day) => sum + day.hours, 0);
   const maxDailyHours = weekDaysData.length > 0 ? Math.max(...weekDaysData.map(d => d.hours), 1) : 1;
-  const normalDaysCount = weekDaysData.filter(d => d.hours === 0).length;
   const peakDay = weekDaysData.reduce((max, d) => d.hours > max.hours ? d : max, { weekday: 'N/A', dateLabel: '', hours: 0 });
 
   // Filter available weeks in dropdown to only show weeks belonging to the selected week's month
@@ -555,69 +583,6 @@ export default function ProductionDashboard() {
                   {weekDaysData.map((day, index) => {
                     const heightPercent = maxDailyHours > 0 ? (day.hours / maxDailyHours) * 100 : 0;
 
-                    let barGradient = "from-emerald-400 to-teal-500";
-                    if (day.hours > 0 && day.hours <= 2) {
-                      barGradient = "from-amber-400 to-orange-500";
-                    } else if (day.hours > 2 && day.hours <= 6) {
-                      barGradient = "from-rose-400 to-red-500";
-                    } else if (day.hours > 6) {
-                      barGradient = "from-rose-600 to-red-700";
-                    }
-
-                    return (
-                      <div key={index} className="flex-1 flex flex-col items-center h-full group relative">
-                        <div className="absolute -top-12 scale-0 group-hover:scale-100 transition-transform duration-200 bg-gray-950 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-md z-10 pointer-events-none whitespace-nowrap">
-                          {formatTime(day.hours)} lost
-                          <div className="w-2 h-2 bg-gray-950 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
-                        </div>
-
-                        <div className="w-full bg-gray-50 hover:bg-gray-100/70 h-full rounded-t-lg relative transition-colors overflow-hidden flex items-end">
-                          {day.hours > 0 ? (
-                            <div
-                              className={`w-full bg-linear-to-t ${barGradient} rounded-t-md transition-all duration-1000 ease-out`}
-                              style={{ height: `${Math.max(heightPercent, 4)}%` }}
-                            />
-                          ) : (
-                            <div className="w-full h-1 bg-emerald-500 rounded-t-sm" />
-                          )}
-                        </div>
-
-                        <span className="text-[10px] font-bold text-gray-400 uppercase mt-2">
-                          {day.weekday}
-                        </span>
-                        <span className="text-[10px] font-semibold text-gray-500">
-                          {day.dateLabel.split(' ')[0]}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div> */}
-
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
-            <div className="border-b border-gray-100 pb-4 mb-6">
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
-                Daily Downtime Analysis
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Left Side: Custom Column Chart */}
-              <div className="lg:col-span-8 flex flex-col justify-between">
-                {/* Chart Area */}
-                <div className="h-64 flex items-end gap-2 sm:gap-4 border-b border-gray-200 pb-2 relative">
-                  {/* Grid Lines background */}
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-8">
-                    {[1, 2, 3, 4].map((gridLineIndex) => (
-                      <div key={gridLineIndex} className="border-t border-dashed border-gray-100 w-full h-0" />
-                    ))}
-                  </div>
-
-                  {weekDaysData.map((day, index) => {
-                    const heightPercent = maxDailyHours > 0 ? (day.hours / maxDailyHours) * 100 : 0;
-
                     // Severity colors for columns
                     let barGradient = "from-emerald-400 to-teal-500";
                     if (day.hours > 0 && day.hours <= 2) {
@@ -630,13 +595,11 @@ export default function ProductionDashboard() {
 
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center h-full group relative">
-                        {/* Tooltip on hover */}
                         <div className="absolute -top-12 scale-0 group-hover:scale-100 transition-transform duration-200 bg-gray-950 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-md z-10 pointer-events-none whitespace-nowrap">
                           {formatTime(day.hours)} lost
                           <div className="w-2 h-2 bg-gray-950 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
                         </div>
 
-                        {/* Visual Column Slot */}
                         <div className="w-full bg-gray-50 hover:bg-gray-100/70 h-full rounded-t-lg relative transition-colors overflow-hidden flex items-end">
                           {day.hours > 0 ? (
                             <div
@@ -648,7 +611,6 @@ export default function ProductionDashboard() {
                           )}
                         </div>
 
-                        {/* Day / Date labels */}
                         <span className="text-[10px] font-bold text-gray-400 uppercase mt-2">
                           {day.weekday}
                         </span>
@@ -661,7 +623,6 @@ export default function ProductionDashboard() {
                 </div>
               </div>
 
-              {/* Right Side: Key Daily Metrics - Grid of Micro-cards */}
               <div className="lg:col-span-4 flex flex-col justify-between">
                 <div className="flex flex-col h-full justify-between">
                   <div className="border-b border-gray-100 pb-2 mb-4">
@@ -671,7 +632,6 @@ export default function ProductionDashboard() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 flex-1">
-                    {/* Card 1: Stoppage Time */}
                     <div className="bg-gray-50/50 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
                       <div>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -685,7 +645,6 @@ export default function ProductionDashboard() {
                       <span className="text-[10px] text-gray-400 font-medium">Stoppages sum</span>
                     </div>
 
-                    {/* Card 2: Incidents */}
                     <div className="bg-gray-50/50 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
                       <div>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -699,7 +658,6 @@ export default function ProductionDashboard() {
                       <span className="text-[10px] text-gray-400 font-medium">Weekly count</span>
                     </div>
                   </div>
-                  {/* Card 3: Peak Day */}
                   <div className="bg-gray-50/50 my-2 border border-gray-200 p-4 rounded-xl flex flex-col justify-between hover:shadow-sm transition-shadow">
                     <div>
                       <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -733,7 +691,7 @@ export default function ProductionDashboard() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Operator Matrix Table */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs overflow-hidden">
@@ -815,42 +773,99 @@ export default function ProductionDashboard() {
               </h2>
             </div>
             <div className="divide-y divide-gray-100">
-              {visibleHoursWent.length === 0 ? (
+              {groupedReasons.length === 0 ? (
                 <p className="text-gray-500 italic py-4">No fault reasons recorded this week.</p>
               ) : (
-                visibleHoursWent.map((fault, index) => {
-                  const { category, cause } = splitFaultName(fault.name);
-                  const mainTitle = getCleanMainIssue(fault.name);
-                  const meta = getFaultMetadata(category, cause);
+                groupedReasons.map((group) => {
+                  const isExpanded = expandedReason === group.title;
 
                   return (
-                    <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between py-4 first:pt-0 last:pb-0">
-
-                      {/* Left Side: Title, Tag, and Subtitle */}
-                      <div className="flex-1 mb-2 sm:mb-0">
-                        <div className="flex items-center gap-3 mb-1">
-                          <span className="font-bold text-gray-900 text-base capitalize">
-                            {mainTitle.replace(/\//g, ' / ')}
+                    <div key={group.title} className="py-2 first:pt-0 last:pb-0">
+                      {/* Main Group Row (Header) */}
+                      <button
+                        onClick={() => setExpandedReason(isExpanded ? null : group.title)}
+                        className="w-full flex items-center justify-between py-3 px-4 rounded-xl hover:bg-gray-50 transition-all duration-200 text-left focus:outline-none cursor-pointer group"
+                      >
+                        {/* Left Side: Title and Chevron */}
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-gray-900 text-base capitalize group-hover:text-blue-600 transition-colors">
+                            {group.title.replace(/\//g, ' / ')}
                           </span>
-                          {/* <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${meta.tagColor}`}>
-                            {meta.tag}
-                          </span> */}
+                          <svg
+                            className={`h-4 w-4 text-gray-400 group-hover:text-blue-500 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-blue-600' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
                         </div>
-                        {/* <div className="text-xs text-gray-500">
-                          {meta.desc}
-                        </div> */}
-                      </div>
 
-                      {/* Right Side: Metrics */}
-                      <div className="flex items-center justify-between sm:justify-end sm:gap-10 text-sm">
-                        <span className="text-gray-500 font-medium">
-                          {fault.occurrences} {fault.occurrences === 1 ? 'event' : 'events'}
-                        </span>
-                        <span className="font-black text-gray-900 w-20 text-right text-base">
-                          {formatTime(fault.hours)}
-                        </span>
-                      </div>
+                        {/* Right Side: Aggregate Metrics */}
+                        <div className="flex items-center gap-8 text-sm">
+                          <span className="text-gray-500 font-semibold bg-gray-100 px-2.5 py-1 rounded-full text-xs">
+                            {group.totalOccurrences} {group.totalOccurrences === 1 ? 'event' : 'events'}
+                          </span>
+                          <span className="font-black text-gray-900 w-20 text-right text-base">
+                            {formatTime(group.totalHours)}
+                          </span>
+                        </div>
+                      </button>
 
+                      {/* Dropdown / Expanded Content */}
+                      <div
+                        className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-200 opacity-100 mt-2 mb-4' : 'max-h-0 opacity-0 pointer-events-none'
+                          }`}
+                      >
+                        <div className="bg-slate-50/60 border border-slate-200/60 rounded-xl p-5 mx-4 space-y-4">
+                          {group.items.map((item, itemIdx) => {
+                            const { category, cause } = splitFaultName(item.name);
+                            const meta = getFaultMetadata(category, cause);
+                            const operators = getOperatorBreakdownForIssue(item.name);
+
+                            return (
+                              <div key={itemIdx} className="space-y-3">
+                                {/* Raw cause and tag */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                                  <div className="flex flex-wrap items-center gap-2.5">
+                                    <span className="font-bold text-slate-800 text-sm capitalize">
+                                      {cause !== "—" ? cause.replace(/\//g, ' / ') : category}
+                                    </span>
+                                    {/* <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${meta.tagColor}`}>
+                                      {meta.tag}
+                                    </span> */}
+                                  </div>
+                                  <span className="text-xs text-slate-500 font-semibold">
+                                    {item.occurrences} {item.occurrences === 1 ? 'event' : 'events'} · {formatTime(item.hours)} lost
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
+                                    Operator Incharge:
+                                  </span>
+                                  {operators.length === 0 ? (
+                                    <span className="text-xs text-slate-400 italic">No operators logged</span>
+                                  ) : (
+                                    operators.map((op) => (
+                                      <span
+                                        key={op.name}
+                                        className="inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded-md text-xs font-semibold shadow-xs"
+                                      >
+                                        <span className="font-bold text-slate-900">{op.name}</span>
+                                        <span className="bg-slate-100 text-slate-600 px-1.5 py-px rounded text-[10px] font-bold">
+                                          {op.count}
+                                        </span>
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   );
                 })
