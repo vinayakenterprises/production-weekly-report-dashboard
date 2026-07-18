@@ -647,7 +647,7 @@ export default function ProductionDashboard() {
                         </div>
                       </button>
 
-                      <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[1000px] opacity-100 mt-2 mb-4' : 'max-h-0 opacity-0 pointer-events-none'}`}>
+                      <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-250 opacity-100 mt-2 mb-4' : 'max-h-0 opacity-0 pointer-events-none'}`}>
                         <div className="bg-slate-50/60 border border-slate-200/60 rounded-xl p-5 mx-4 space-y-4">
                           {group.items.map((item, itemIdx) => {
                             const { category, cause } = splitFaultName(item.name);
