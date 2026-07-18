@@ -187,27 +187,7 @@ export default function ProductionDashboard() {
     return Object.values(byName).sort((a, b) => b.total - a.total || b.cuts - a.cuts);
   })();
 
-  const getFaultMetadata = (category, cause) => {
-    const lowerCause = (cause || '').toLowerCase();
-    const lowerCategory = (category || '').toLowerCase();
-    const fullText = `${lowerCategory} ${lowerCause}`;
-    if (fullText.includes('entry guide') || fullText.includes('tuta') || fullText.includes('wire break')) {
-      return { tag: 'CHECK TENSION', tagColor: 'bg-red-100 text-red-800', desc: 'Entry guide tension suspected' };
-    }
-    if (fullText.includes('crack') || fullText.includes('kachra') || fullText.includes('ingot')) {
-      return { tag: 'FLAG TO PURCHASE', tagColor: 'bg-red-100 text-red-800', desc: 'Linked to ingot quality' };
-    }
-    if (fullText.includes('scheduled') || fullText.includes('mold') || fullText.includes('share pin')) {
-      return { tag: 'PLANNED', tagColor: 'bg-slate-100 text-slate-700', desc: 'Not a fault, expected maintenance block' };
-    }
-    if (fullText.includes('stand')) {
-      return { tag: 'INSPECT STAND', tagColor: 'bg-red-100 text-red-800', desc: 'Repeat on same stand number' };
-    }
-    if (fullText.includes('belt')) {
-      return { tag: 'WEAR ITEM', tagColor: 'bg-slate-100 text-slate-700', desc: 'Within expected wear cycle' };
-    }
-    return { tag: 'REVIEW', tagColor: 'bg-gray-100 text-gray-600', desc: 'Standard review required' };
-  };
+
 
   const groupedReasons = (() => {
     const groups = {};
@@ -261,13 +241,7 @@ export default function ProductionDashboard() {
     return dates;
   };
 
-  // 1. General Downtime Loop (For chart rendering analytics)
-  const weekDaysData = currentWeek ? generateWeekDates(currentWeek.week).map(day => {
-    const record = currentWeek.dailyDowntime?.find(d => d.date === day.dateLabel || d.date === day.dateLabelAlt);
-    return { ...day, hours: record ? record.hours : 0 };
-  }) : [];
-
-  // 2. FIXED: Targeted Loop strictly pulling from dailyProductionHoursLostMill array dataset
+  // FIXED: Targeted Loop strictly pulling from dailyProductionHoursLostMill array dataset
   const dailyProductionData = currentWeek ? generateWeekDates(currentWeek.week).map(day => {
     const sourceArray = currentWeek.dailyProductionHoursLostMill || currentWeek.dailyProductionHoursLost || [];
     const record = sourceArray.find(d => d.date === day.dateLabel || d.date === day.dateLabelAlt);
@@ -278,9 +252,6 @@ export default function ProductionDashboard() {
     }
     return { ...day, hours: hoursValue };
   }) : [];
-
-  const maxDailyHours = weekDaysData.length > 0 ? Math.max(...weekDaysData.map(d => d.hours), 1) : 1;
-  const peakDay = weekDaysData.reduce((max, d) => d.hours > max.hours ? d : max, { weekday: 'N/A', dateLabel: '', hours: 0 });
 
   const currentMonthKey = currentWeek?.week ? getWeekMajorityMonth(currentWeek.week) : "";
   const currentMonthWeeks = weeklyData.filter(w => w.week && doesWeekOverlapMonth(w.week, currentMonthKey));
@@ -546,7 +517,7 @@ export default function ProductionDashboard() {
           {/* Operator Matrix Table */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
-              Operator & Issues Matrix
+              Operator & Issues Overview
             </h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
@@ -608,7 +579,7 @@ export default function ProductionDashboard() {
           <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
             <div className="flex justify-between items-end border-b border-gray-200 pb-2 mb-6 mt-4">
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
-                Reasons Overview Hierarchy
+                Faults Overview
               </h2>
             </div>
             <div className="divide-y divide-gray-100">
