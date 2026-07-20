@@ -81,6 +81,19 @@ const doesWeekOverlapMonth = (startMondayStr, targetMonthStr) => {
   return false;
 };
 
+// Helper to get the Monday of the current week in YYYY-MM-DD format
+const getMondayOfCurrentWeek = () => {
+  const d = new Date();
+  const day = d.getDay();
+  // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+  const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+  const monday = new Date(d.setDate(diff));
+  const yyyy = monday.getFullYear();
+  const mm = String(monday.getMonth() + 1).padStart(2, '0');
+  const dd = String(monday.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function ProductionDashboard() {
   const [weeklyData, setWeeklyData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +112,18 @@ export default function ProductionDashboard() {
           setWeeklyData(result.data);
           setLoading(false);
           if (result.data.length > 0) {
-            setSelectedWeek(result.data[result.data.length - 1].week);
+            const currentWeekMonday = getMondayOfCurrentWeek();
+            const match = result.data.find(w => w.week === currentWeekMonday);
+            if (match) {
+              setSelectedWeek(match.week);
+            } else {
+              const pastWeeks = result.data.filter(w => w.week <= currentWeekMonday);
+              if (pastWeeks.length > 0) {
+                setSelectedWeek(pastWeeks[pastWeeks.length - 1].week);
+              } else {
+                setSelectedWeek(result.data[result.data.length - 1].week);
+              }
+            }
           }
         } else {
           throw new Error(result.message || 'Failed to fetch data');
@@ -328,14 +352,6 @@ export default function ProductionDashboard() {
               <p className="text-xl font-black text-gray-900">
                 {formatTime(currentWeek.totalProductionHoursLost)}
               </p>
-              {previousWeek ? (
-                <span className={`text-xs font-bold ${isProdIncrease ? 'text-red-600' : 'text-green-600'}`}>
-                  {isProdIncrease ? '▲ ' : '▼ '}
-                  {Math.abs(prodHoursChange).toFixed(0)}% vs last week
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400">No comparison data</span>
-              )}
             </div>
           </div>
 
@@ -350,13 +366,6 @@ export default function ProductionDashboard() {
               <p className="text-xl font-bold text-gray-900 truncate" title={getCleanMainIssue(topFault.name)}>
                 {topFault.name !== 'None' ? getCleanMainIssue(topFault.name) : 'No Faults'}
               </p>
-              {topFault.name !== 'None' ? (
-                <span className="text-xs text-gray-500 font-medium">
-                  {formatTime(topFault.hours)} lost ({topFault.occurrences} events)
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400">No recorded incidents</span>
-              )}
             </div>
           </div>
 
@@ -393,9 +402,6 @@ export default function ProductionDashboard() {
               <p className="text-xl font-black text-gray-900">
                 {topOperator.name !== 'None' ? topOperator.name : 'N/A'}
               </p>
-              <span className="text-xs text-gray-500 font-medium">
-                Responsible for: <span className="font-bold text-gray-700">{topOperator.total} incidents</span>
-              </span>
             </div>
           </div>
 
@@ -410,14 +416,6 @@ export default function ProductionDashboard() {
               <p className="text-xl font-black tracking-tight text-gray-900">
                 {totalCuts} cuts
               </p>
-              {previousWeek && previousTotalCuts > 0 ? (
-                <span className={`text-xs font-bold ${isCutsIncrease ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {isCutsIncrease ? '▲ ' : '▼ '}
-                  {Math.abs(cutsChange).toFixed(0)}% vs last week
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400">No comparison data</span>
-              )}
             </div>
           </div>
         </section>
@@ -576,7 +574,7 @@ export default function ProductionDashboard() {
           </div>
 
           {/* Reasons Overview Group Accordion */}
-          <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
+          {/* <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
             <div className="flex justify-between items-end border-b border-gray-200 pb-2 mb-6 mt-4">
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
                 Faults Overview
@@ -664,7 +662,7 @@ export default function ProductionDashboard() {
                 })
               )}
             </div>
-          </div>
+          </div> */}
 
         </div>
       </div>
