@@ -1,4 +1,4 @@
-import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Check } from 'lucide-react';
+import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Check, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 // UTILITY FUNCTIONS
@@ -41,6 +41,10 @@ const getCleanMainIssue = (fullName) => {
   if (category === "Casting Faults") return "Casting Fault";
   return category;
 };
+
+// True for the synthetic bucket the API emits when Mill Daily Data reports
+// lost hours for a day but no logged row can be attributed to a cause.
+const isUnattributedIssue = (name) => !!name && name.startsWith("Unattributed");
 
 // Finds the month (YYYY-MM) that has the majority of days in a week starting on startMondayStr
 const getWeekMajorityMonth = (startMondayStr) => {
@@ -100,7 +104,7 @@ export default function ProductionDashboard() {
   const [error, setError] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [expandedReason, setExpandedReason] = useState(null);
+  const [expandedDay, setExpandedDay] = useState(null);
   const API_URL = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
@@ -135,6 +139,10 @@ export default function ProductionDashboard() {
     };
     fetchData();
   }, [API_URL]);
+
+  useEffect(() => {
+    setExpandedDay(null);
+  }, [selectedWeek]);
 
   if (loading) {
     return (
@@ -174,27 +182,7 @@ export default function ProductionDashboard() {
   const totalCuts = currentWeek.totalCuts ?? 0;
   const previousTotalCuts = previousWeek?.totalCuts ?? 0;
 
-  let prodHoursChange = 0;
-  if (previousWeek && previousWeek.totalProductionHoursLost > 0) {
-    prodHoursChange = ((currentWeek.totalProductionHoursLost - previousWeek.totalProductionHoursLost) / previousWeek.totalProductionHoursLost) * 100;
-  }
-  const isProdIncrease = prodHoursChange > 0;
-
-  let cutsChange = 0;
-  if (previousTotalCuts > 0) {
-    cutsChange = ((totalCuts - previousTotalCuts) / previousTotalCuts) * 100;
-  }
-  const isCutsIncrease = cutsChange > 0;
-
-  let stoppagesChange = 0;
-  const previousTotalStoppages = previousWeek?.totalStoppageCount ?? 0;
-  if (previousTotalStoppages > 0) {
-    stoppagesChange = ((currentWeek.totalStoppageCount - previousTotalStoppages) / previousTotalStoppages) * 100;
-  }
-  const isStoppagesIncrease = stoppagesChange > 0;
-
   const faultCategories = (currentWeek.whereTheHoursWent || []).map(f => f.name);
-  const visibleHoursWent = currentWeek.whereTheHoursWent || [];
 
   const operatorRows = (() => {
     const byName = {};
@@ -208,38 +196,10 @@ export default function ProductionDashboard() {
         byName[op.name] = { name: op.name, total: 0, breakdown: {}, cuts: op.cuts };
       }
     });
-    return Object.values(byName).sort((a, b) => b.total - a.total || b.cuts - a.cuts);
+    return Object.values(byName);
+
   })();
 
-
-
-  const groupedReasons = (() => {
-    const groups = {};
-    (currentWeek.whereTheHoursWent || []).forEach(fault => {
-      const cleanTitle = getCleanMainIssue(fault.name);
-      if (!groups[cleanTitle]) {
-        groups[cleanTitle] = { title: cleanTitle, totalHours: 0, totalOccurrences: 0, items: [] };
-      }
-      groups[cleanTitle].totalHours += fault.hours;
-      groups[cleanTitle].totalOccurrences += fault.occurrences;
-      groups[cleanTitle].items.push(fault);
-    });
-    return Object.values(groups).sort((a, b) => b.totalHours - a.totalHours);
-  })();
-
-  const getOperatorBreakdownForIssue = (rawIssueName) => {
-    if (!currentWeek || !currentWeek.operatorMatrix) return [];
-    const operators = [];
-    currentWeek.operatorMatrix.forEach(op => {
-      const count = op.breakdown ? (op.breakdown[rawIssueName] || 0) : 0;
-      if (count > 0) {
-        operators.push({ name: op.name, count });
-      }
-    });
-    return operators.sort((a, b) => b.count - a.count);
-  };
-
-  // Generate dates for the week starting on Monday
   const generateWeekDates = (startMondayStr) => {
     if (!startMondayStr) return [];
     const dates = [];
@@ -265,17 +225,29 @@ export default function ProductionDashboard() {
     return dates;
   };
 
-  // FIXED: Targeted Loop strictly pulling from dailyProductionHoursLostMill array dataset
-  const dailyProductionData = currentWeek ? generateWeekDates(currentWeek.week).map(day => {
-    const sourceArray = currentWeek.dailyProductionHoursLostMill || currentWeek.dailyProductionHoursLost || [];
-    const record = sourceArray.find(d => d.date === day.dateLabel || d.date === day.dateLabelAlt);
+  // const dailyProductionData = currentWeek ? generateWeekDates(currentWeek.week).map(day => {
+  //   const sourceArray = currentWeek.dailyProductionHoursLostMill || currentWeek.dailyProductionHoursLost || [];
+  //   const record = sourceArray.find(d => d.date === day.dateLabel || d.date === day.dateLabelAlt);
 
-    let hoursValue = 0;
-    if (record) {
-      hoursValue = record.hours ?? record.hoursLost ?? record.value ?? (typeof record === 'number' ? record : 0);
-    }
-    return { ...day, hours: hoursValue };
+  //   let hoursValue = 0;
+  //   if (record) {
+  //     hoursValue = record.hours ?? record.hoursLost ?? record.value ?? (typeof record === 'number' ? record : 0);
+  //   }
+  //   return { ...day, hours: hoursValue };
+  // }) : [];
+
+  const dailyIssueData = currentWeek ? generateWeekDates(currentWeek.week).map(day => {
+    const source = currentWeek.dailyIssueBreakdown || [];
+    const record = source.find(d => d.date === day.dateLabel || d.date === day.dateLabelAlt);
+    return {
+      ...day,
+      productionHoursLost: record?.productionHoursLost ?? 0,
+      issues: record?.issues ?? []
+    };
   }) : [];
+
+  const maxDayHours = Math.max(0, ...dailyIssueData.map(d => d.productionHoursLost));
+  const hasAnyDailyIssues = dailyIssueData.some(d => d.issues.length > 0);
 
   const currentMonthKey = currentWeek?.week ? getWeekMajorityMonth(currentWeek.week) : "";
   const currentMonthWeeks = weeklyData.filter(w => w.week && doesWeekOverlapMonth(w.week, currentMonthKey));
@@ -288,7 +260,7 @@ export default function ProductionDashboard() {
         <header className="border-b border-gray-200 pb-5 flex flex-col sm:flex-row justify-between items-center gap-y-4 sm:gap-y-0">
           <div className="space-y-1.5 text-left">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">Vinayak Enterprises</h1>
-            <p className="text-gray-500 text-md font-semibold">Production Weekly Report</p>
+            <p className="text-gray-700 text-md font-bold">Weekly Production Report</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative inline-block text-left z-20 pt-1">
@@ -363,33 +335,11 @@ export default function ProductionDashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <p className="text-xl font-bold text-gray-900 truncate" title={getCleanMainIssue(topFault.name)}>
-                {topFault.name !== 'None' ? getCleanMainIssue(topFault.name) : 'No Faults'}
+              <p className="text-xl font-bold text-gray-900 truncate" title={topFault.name}>
+                {topFault.name !== 'None' ? topFault.name : 'No Faults'}
               </p>
             </div>
           </div>
-
-          {/* <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-500 capitalize">Total Stoppages</span>
-              <div className="bg-blue-50 p-2 rounded-lg">
-                <CirclePause className='text-blue-500 size-6' />
-              </div>
-            </div>
-            <div className="mt-4">
-              <p className="text-xl font-bold text-gray-900">
-                {currentWeek.totalStoppageCount} Stops
-              </p>
-              {previousWeek ? (
-                <span className={`text-xs font-bold ${isStoppagesIncrease ? 'text-red-600' : 'text-green-600'}`}>
-                  {isStoppagesIncrease ? '▲ ' : '▼ '}
-                  {Math.abs(stoppagesChange).toFixed(0)}% vs last week
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400">No comparison data</span>
-              )}
-            </div>
-          </div> */}
 
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
@@ -420,11 +370,10 @@ export default function ProductionDashboard() {
           </div>
         </section>
 
-        {/* ROW BASE MAIN PANELS */}
         <div className="space-y-8">
 
           {/* Standalone Table: Daily Production Hours Lost Block */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
+          {/* <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
               Daily Production Hours Lost
             </h2>
@@ -462,55 +411,138 @@ export default function ProductionDashboard() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div> */}
 
-          {/* Hours Lost Overview */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
-            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
-              Hours Lost Overview
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-200/50">
-                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs rounded-l-lg w-36">Hours Lost</th>
-                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs">Category</th>
-                    <th className="px-4 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right rounded-r-lg w-36">Occurrences</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {visibleHoursWent.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500 italic">
-                        No specific faults recorded this week.
-                      </td>
-                    </tr>
-                  ) : (
-                    visibleHoursWent.map((fault, index) => {
-                      const isHighest = index === 0;
-                      const cleanCategory = getCleanMainIssue(fault.name);
-                      return (
-                        <tr key={index} className={`transition-colors border-l-4 ${isHighest ? 'bg-amber-500/10 border-l-amber-500' : 'hover:bg-gray-50 border-l-transparent'}`}>
-                          <td className="px-4 py-3.5 font-black text-gray-900 text-sm">
-                            {formatTime(fault.hours)}
-                          </td>
-                          <td className="px-4 py-3.5 font-medium text-gray-600 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span>{cleanCategory}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3.5 text-right font-medium text-gray-500 text-sm">
-                            {fault.occurrences} events
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+          {/* REDESIGNED: Hours Lost Overview */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-white">
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                Production Hours Lost Overview
+              </h2>
             </div>
-          </div>
 
+            {!hasAnyDailyIssues ? (
+              <p className="text-gray-500 italic p-6">No specific faults recorded this week.</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {dailyIssueData.map((day) => {
+                  const isExpanded = expandedDay === day.dateLabel;
+                  const hasIssues = day.issues.length > 0;
+                  const isHighestDay = hasIssues && maxDayHours > 0 && day.productionHoursLost === maxDayHours;
+                  const eventCount = day.issues.reduce((sum, i) => sum + i.occurrences, 0);
+
+                  return (
+                    <div key={day.dateLabel} className="group flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => hasIssues && setExpandedDay(isExpanded ? null : day.dateLabel)}
+                        disabled={!hasIssues}
+                        aria-expanded={isExpanded}
+                        className={`w-full flex items-center justify-between py-4 px-6 transition-colors duration-200 text-left focus:outline-none ${isHighestDay
+                          ? `bg-amber-50/80 border-l-4 border-amber-500 ${isExpanded ? 'bg-amber-100/90' : ''} ${hasIssues ? 'hover:bg-amber-100/90 cursor-pointer' : ''}`
+                          : `${hasIssues ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default bg-gray-50/50'} ${isExpanded ? 'bg-gray-50' : ''}`
+                          }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          {hasIssues ? (
+                            <ChevronRight
+                              className={`h-5 w-5 shrink-0 transition-transform duration-300 ${isHighestDay
+                                ? `text-amber-500 group-hover:text-amber-600 ${isExpanded ? 'rotate-90 text-amber-600' : ''}`
+                                : `text-gray-400 group-hover:text-blue-500 ${isExpanded ? 'rotate-90 text-blue-600' : ''}`
+                                }`}
+                            />
+                          ) : (
+                            <span className="h-5 w-5 shrink-0" />
+                          )}
+                          <span className={`font-bold text-sm w-12 sm:w-16 ${hasIssues ? (isHighestDay ? 'text-amber-950' : 'text-gray-900') : 'text-gray-400'}`}>
+                            {day.weekday}
+                          </span>
+                          <span className={`font-medium text-sm ${hasIssues ? (isHighestDay ? 'text-amber-800' : 'text-gray-600') : 'text-gray-400'}`}>
+                            {day.dateLabel}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-4 sm:gap-8">
+                          {hasIssues ? (
+                            <span className={`hidden sm:inline-flex items-center justify-center font-semibold px-2.5 py-1 rounded-full text-xs ${isHighestDay ? 'bg-amber-200/80 text-amber-900' : 'bg-blue-50 text-blue-700'}`}>
+                              {eventCount} {eventCount === 1 ? 'event' : 'events'}
+                            </span>
+                          ) : (
+                            <span className="hidden sm:inline text-gray-400 text-xs italic">No faults</span>
+                          )}
+                          <span className={`font-bold text-right ${hasIssues ? (isHighestDay ? 'text-amber-950' : 'text-gray-900') : 'text-gray-400'}`}>
+                            {formatTime(day.productionHoursLost)}
+                          </span>
+                        </div>
+                      </button>
+
+                      <div
+                        className={`transition-all duration-300 ease-in-out overflow-hidden bg-gray-50/50 ${isExpanded ? 'max-h-250 opacity-100 border-b border-gray-100' : 'max-h-0 opacity-0 pointer-events-none'
+                          }`}
+                      >
+                        {/* Nested Table for Detailed Issues */}
+                        <div className="mx-6 sm:mx-12 my-6 border border-gray-200 rounded-lg overflow-x-auto shadow-sm bg-white">
+                          <table className="w-full text-left text-sm whitespace-nowrap">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                              <tr>
+                                <th className="px-5 py-3.5 font-semibold text-gray-600">Issue Description</th>
+                                <th className="px-5 py-3.5 font-semibold text-gray-600 text-center">Occurrences</th>
+                                <th className="px-5 py-3.5 font-semibold text-gray-600">Operator(s)</th>
+                                <th className="px-5 py-3.5 font-semibold text-gray-600 text-right">Time Lost</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {day.issues.map((issue, idx) => {
+                                const unattributed = isUnattributedIssue(issue.name);
+                                return (
+                                  <tr key={idx} className="hover:bg-gray-50/70 transition-colors">
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex items-center gap-2.5">
+                                        {unattributed ? (
+                                          <TriangleAlert className="size-4 text-amber-500 shrink-0" />
+                                        ) : (
+                                          <CirclePause className="size-4 text-gray-400 shrink-0" />
+                                        )}
+                                        <span className={`font-semibold text-sm ${unattributed ? 'text-amber-700 italic' : 'text-gray-800'}`}>
+                                          {issue.name}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-3.5 text-center">
+                                      <span className="inline-flex items-center justify-center bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">
+                                        {issue.occurrences}x
+                                      </span>
+                                    </td>
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {issue.operators.length === 0 ? (
+                                          <span className="text-gray-400 text-xs italic">Unknown</span>
+                                        ) : (
+                                          issue.operators.map((op) => (
+                                            <span key={op} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-xs font-semibold">
+                                              {op}
+                                            </span>
+                                          ))
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-3.5 text-right font-bold text-gray-700">
+                                      {formatTime(issue.productionHoursLost)}
+                                    </td>
+
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* Operator Matrix Table */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
@@ -572,97 +604,6 @@ export default function ProductionDashboard() {
               </table>
             </div>
           </div>
-
-          {/* Reasons Overview Group Accordion */}
-          {/* <div className="bg-white border border-gray-200 rounded-xl shadow-xs p-6">
-            <div className="flex justify-between items-end border-b border-gray-200 pb-2 mb-6 mt-4">
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
-                Faults Overview
-              </h2>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {groupedReasons.length === 0 ? (
-                <p className="text-gray-500 italic py-4">No fault reasons recorded this week.</p>
-              ) : (
-                groupedReasons.map((group) => {
-                  const isExpanded = expandedReason === group.title;
-                  return (
-                    <div key={group.title} className="py-2 first:pt-0 last:pb-0">
-                      <button
-                        onClick={() => setExpandedReason(isExpanded ? null : group.title)}
-                        className="w-full flex items-center justify-between py-3 px-4 rounded-xl hover:bg-gray-50 transition-all duration-200 text-left focus:outline-none cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold text-gray-900 text-base capitalize group-hover:text-blue-600 transition-colors">
-                            {group.title.replace(/\//g, '/')}
-                          </span>
-                          <svg
-                            className={`h-4 w-4 text-gray-400 transition-transform duration-300 group-hover:text-blue-500 ${isExpanded ? 'rotate-90 text-blue-600' : ''}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                        <div className="flex items-center gap-8">
-                          <span className="text-gray-500 font-semibold bg-gray-100 px-2.5 py-1 rounded-full text-xs">
-                            {group.totalOccurrences} {group.totalOccurrences === 1 ? 'event' : 'events'}
-                          </span>
-                          <span className="font-black text-gray-900 w-20 text-right text-base">
-                            {formatTime(group.totalHours)}
-                          </span>
-                        </div>
-                      </button>
-
-                      <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-250 opacity-100 mt-2 mb-4' : 'max-h-0 opacity-0 pointer-events-none'}`}>
-                        <div className="bg-slate-50/60 border border-slate-200/60 rounded-xl p-5 mx-4 space-y-4">
-                          {group.items.map((item, itemIdx) => {
-                            const { category, cause } = splitFaultName(item.name);
-                            const operators = getOperatorBreakdownForIssue(item.name);
-                            return (
-                              <div key={itemIdx} className="space-y-3">
-                                <div className="flex flex-col justify-between gap-2 border-b sm:flex-row sm:items-center border-slate-100 pb-2">
-                                  <div className="flex flex-wrap items-center gap-2.5">
-                                    <span className="font-bold text-slate-800 text-sm capitalize">
-                                      {cause !== "-" ? cause.replace(/\//g, '/') : category}
-                                    </span>
-                                  </div>
-                                  <span className="text-xs text-slate-500 font-semibold">
-                                    {item.occurrences} {item.occurrences === 1 ? 'event' : 'events'} • {formatTime(item.hours)} lost
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 mt-2">
-                                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
-                                    Operator Incharge:
-                                  </span>
-                                  {operators.length === 0 ? (
-                                    <span className="text-xs text-slate-400 italic">No operators logged</span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {operators.map((op) => (
-                                        <span key={op.name} className="inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded-md text-xs font-semibold shadow-xs">
-                                          <span className="font-bold text-slate-900">{op.name}</span>
-                                          <span className="bg-slate-100 text-[10px] font-bold text-slate-600 px-1.5 py-px rounded">
-                                            {op.count}
-                                          </span>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div> */}
 
         </div>
       </div>
