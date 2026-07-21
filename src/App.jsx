@@ -369,7 +369,7 @@ export default function ProductionDashboard() {
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-gray-800 capitalize">Most Frequent Issue</span>
               <div className="bg-blue-50 p-2 rounded-lg">
-                <Activity className='text-blue-500 size-6' />
+                <Activity className='text-red-500 size-6' />
               </div>
             </div>
             <div className="mt-4">
@@ -377,7 +377,7 @@ export default function ProductionDashboard() {
                 {mostFrequentIncident.name !== 'None' ? getCleanMainIssue(mostFrequentIncident.name) : 'No Incidents'}
               </p>
               {mostFrequentIncident.name !== 'None' ? (
-                <span className="text-xs text-blue-600 font-bold">
+                <span className="text-xs text-red-600 font-bold">
                   {mostFrequentIncident.total} {mostFrequentIncident.total === 1 ? 'incident' : 'incidents'}
                 </span>
               ) : (
@@ -545,21 +545,21 @@ export default function ProductionDashboard() {
               <table className="w-full text-left text-sm whitespace-nowrap border-separate border-spacing-0">
                 <thead>
                   <tr className="bg-gray-200/60 border-b border-gray-300">
-                    <th className="sticky left-0 bg-gray-200 z-20 px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs rounded-l-lg min-w-[200px] border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Operator</th>
+                    <th className="sticky left-0 bg-gray-200 z-20 px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs rounded-l-lg min-w-50 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Operator</th>
                     {faultCategories.length === 0 ? (
-                      <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-[160px]">Faults</th>
+                      <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-40">Faults</th>
                     ) : (
                       faultCategories.map(category => {
                         const headerLabel = getCleanMainIssue(category);
                         return (
-                          <th key={category} title={category} className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-[180px]">
+                          <th key={category} title={category} className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-45">
                             {headerLabel}
                           </th>
                         );
                       })
                     )}
-                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-[130px] border-l border-gray-300">Total Faults</th>
-                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-[120px] rounded-r-lg">Total Cuts</th>
+                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-32.5 border-l border-gray-300">Total Faults</th>
+                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-30 rounded-r-lg">Total Cuts</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -572,11 +572,11 @@ export default function ProductionDashboard() {
                   ) : (
                     operatorRows.map((operator) => (
                       <tr key={operator.name} className="group hover:bg-gray-50/80 transition-colors">
-                        <td className="sticky left-0 bg-white group-hover:bg-gray-50/90 z-10 px-6 py-4.5 font-bold text-gray-900 min-w-[200px] border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">{operator.name}</td>
+                        <td className="sticky left-0 bg-white group-hover:bg-gray-50/90 z-10 px-6 py-4.5 font-bold text-gray-900 min-w-50 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">{operator.name}</td>
                         {faultCategories.map(category => {
                           const count = operator.breakdown ? (operator.breakdown[category] || 0) : 0;
                           return (
-                            <td key={category} className="px-6 py-4.5 text-center min-w-[180px]">
+                            <td key={category} className="px-6 py-4.5 text-center min-w-45">
                               {count > 0 ? (
                                 <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-bold px-3 py-1 rounded-md text-xs">
                                   {count}
@@ -587,8 +587,8 @@ export default function ProductionDashboard() {
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-[130px] border-l border-gray-100">{operator.total}</td>
-                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-[120px]">{operator.cuts}</td>
+                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-32.5 border-l border-gray-100">{operator.total}</td>
+                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-30">{operator.cuts}</td>
                       </tr>
                     ))
                   )}
@@ -596,25 +596,25 @@ export default function ProductionDashboard() {
                 {operatorRows.length > 0 && (
                   <tfoot className="border-t-2 border-gray-300 bg-gray-100/90 font-bold">
                     <tr>
-                      <td className="sticky left-0 bg-gray-100 z-10 px-6 py-4 text-gray-900 font-extrabold text-sm uppercase min-w-[200px] border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Total</td>
+                      <td className="sticky left-0 bg-gray-100 z-10 px-6 py-4 text-gray-900 font-extrabold text-sm uppercase min-w-50 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Total</td>
                       {faultCategories.length === 0 ? (
-                        <td className="px-6 py-4 text-center text-gray-900 font-extrabold text-sm min-w-[160px]">0</td>
+                        <td className="px-6 py-4 text-center text-gray-900 font-extrabold text-sm min-w-40">0</td>
                       ) : (
                         faultCategories.map(category => {
                           const catTotal = operatorRows.reduce((sum, op) => sum + (op.breakdown?.[category] || 0), 0);
                           const isMostFrequent = category === mostFrequentIncident.name && catTotal > 0;
                           return (
-                            <td key={category} className="px-6 py-4 text-center min-w-[180px]">
+                            <td key={category} className="px-6 py-4 text-center min-w-45">
                               {catTotal > 0 ? (
                                 <div className="flex flex-col items-center gap-0.5">
-                                  <span className={`inline-flex items-center justify-center font-extrabold px-3 py-1 rounded-md text-xs ${isMostFrequent
-                                    ? 'bg-blue-600 text-white ring-2 ring-blue-300'
+                                  <span className={`inline-flex items-center justify-center font-bold px-3 py-1 rounded-md text-xs ${isMostFrequent
+                                    ? 'bg-red-600 text-white ring-2 ring-red-300'
                                     : 'bg-gray-200 text-gray-900'
                                     }`}>
                                     {catTotal}
                                   </span>
                                   {isMostFrequent && (
-                                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-tight">Most Frequent</span>
+                                    <span className="text-[10px] font-bold text-red-600 uppercase tracking-tight">Most Frequent</span>
                                   )}
                                 </div>
                               ) : (
@@ -624,10 +624,10 @@ export default function ProductionDashboard() {
                           );
                         })
                       )}
-                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-[130px] border-l border-gray-200">
+                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-32.5 border-l border-gray-200">
                         {operatorRows.reduce((sum, op) => sum + (op.total || 0), 0)}
                       </td>
-                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-[120px]">
+                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-30">
                         {operatorRows.reduce((sum, op) => sum + (op.cuts || 0), 0)}
                       </td>
                     </tr>
