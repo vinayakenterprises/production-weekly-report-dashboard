@@ -536,59 +536,59 @@ export default function ProductionDashboard() {
             )}
           </div>
 
-          {/* Operator Matrix Table */}
+          {/* Operator Matrix Table - Fits on screen with word wrap and prominent numbers */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden">
             <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
               Operator & Issues Overview
             </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm whitespace-nowrap border-separate border-spacing-0">
+            <div className="w-full">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
                 <thead>
                   <tr className="bg-gray-200/60 border-b border-gray-300">
-                    <th className="sticky left-0 bg-gray-200 z-20 px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs rounded-l-lg min-w-50 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Operator</th>
+                    <th className="bg-gray-200 px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] rounded-l-lg border-r border-gray-300 wrap-break-word">Operator</th>
                     {faultCategories.length === 0 ? (
-                      <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-40">Faults</th>
+                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] text-center">Faults</th>
                     ) : (
                       faultCategories.map(category => {
                         const headerLabel = getCleanMainIssue(category);
                         return (
-                          <th key={category} title={category} className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-center min-w-45">
+                          <th key={category} title={category} className="px-2 py-2.5 font-bold text-gray-700 tracking-wider text-[10px] text-center wrap-break-word leading-tight">
                             {headerLabel}
                           </th>
                         );
                       })
                     )}
-                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-32.5 border-l border-gray-300">Total Faults</th>
-                    <th className="px-6 py-4 font-bold text-gray-700 uppercase tracking-wider text-xs text-right min-w-30 rounded-r-lg">Total Cuts</th>
+                    <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right border-l border-gray-300 wrap-break-word leading-tight">Total Faults</th>
+                    <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right rounded-r-lg wrap-break-word leading-tight">Total Cuts</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {operatorRows.length === 0 ? (
                     <tr>
-                      <td colSpan={faultCategories.length > 0 ? faultCategories.length + 3 : 4} className="px-6 py-8 text-center text-sm text-gray-500 italic">
+                      <td colSpan={faultCategories.length > 0 ? faultCategories.length + 3 : 4} className="px-4 py-8 text-center text-sm text-gray-500 italic">
                         No operator records found.
                       </td>
                     </tr>
                   ) : (
                     operatorRows.map((operator) => (
                       <tr key={operator.name} className="group hover:bg-gray-50/80 transition-colors">
-                        <td className="sticky left-0 bg-white group-hover:bg-gray-50/90 z-10 px-6 py-4.5 font-bold text-gray-900 min-w-50 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">{operator.name}</td>
+                        <td className="px-3 py-2.5 font-bold text-gray-900 text-xs border-r border-gray-200 break-words">{operator.name}</td>
                         {faultCategories.map(category => {
                           const count = operator.breakdown ? (operator.breakdown[category] || 0) : 0;
                           return (
-                            <td key={category} className="px-6 py-4.5 text-center min-w-45">
+                            <td key={category} className="px-1.5 py-2.5 text-center">
                               {count > 0 ? (
-                                <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-bold px-3 py-1 rounded-md text-xs">
+                                <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-extrabold px-2.5 py-0.5 rounded-md text-sm">
                                   {count}
                                 </span>
                               ) : (
-                                <span className="text-gray-300 font-medium">-</span>
+                                <span className="text-gray-300 font-medium text-xs">-</span>
                               )}
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-32.5 border-l border-gray-100">{operator.total}</td>
-                        <td className="px-6 py-4.5 text-right font-bold text-gray-900 text-base min-w-30">{operator.cuts}</td>
+                        <td className="px-2 py-2.5 text-right font-extrabold text-gray-900 text-sm border-l border-gray-100">{operator.total}</td>
+                        <td className="px-2 py-2.5 text-right font-extrabold text-gray-900 text-sm">{operator.cuts}</td>
                       </tr>
                     ))
                   )}
@@ -596,38 +596,38 @@ export default function ProductionDashboard() {
                 {operatorRows.length > 0 && (
                   <tfoot className="border-t-2 border-gray-300 bg-gray-100/90 font-bold">
                     <tr>
-                      <td className="sticky left-0 bg-gray-100 z-10 px-6 py-4 text-gray-900 font-extrabold text-sm uppercase min-w-50 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Total</td>
+                      <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300">Total</td>
                       {faultCategories.length === 0 ? (
-                        <td className="px-6 py-4 text-center text-gray-900 font-extrabold text-sm min-w-40">0</td>
+                        <td className="px-2 py-2.5 text-center text-gray-900 font-extrabold text-sm">0</td>
                       ) : (
                         faultCategories.map(category => {
                           const catTotal = operatorRows.reduce((sum, op) => sum + (op.breakdown?.[category] || 0), 0);
                           const isMostFrequent = category === mostFrequentIncident.name && catTotal > 0;
                           return (
-                            <td key={category} className="px-6 py-4 text-center min-w-45">
+                            <td key={category} className="px-1.5 py-2.5 text-center">
                               {catTotal > 0 ? (
                                 <div className="flex flex-col items-center gap-0.5">
-                                  <span className={`inline-flex items-center justify-center font-bold px-3 py-1 rounded-md text-xs ${isMostFrequent
+                                  <span className={`inline-flex items-center justify-center font-extrabold px-2.5 py-0.5 rounded-md text-xs sm:text-sm ${isMostFrequent
                                     ? 'bg-red-600 text-white ring-2 ring-red-300'
                                     : 'bg-gray-200 text-gray-900'
                                     }`}>
                                     {catTotal}
                                   </span>
                                   {isMostFrequent && (
-                                    <span className="text-[10px] font-bold text-red-600 uppercase tracking-tight">Most Frequent</span>
+                                    <span className="text-[9px] font-bold text-red-600 uppercase tracking-tight leading-none">Most Frequent</span>
                                   )}
                                 </div>
                               ) : (
-                                <span className="text-gray-400 font-medium">-</span>
+                                <span className="text-gray-400 font-medium text-xs">-</span>
                               )}
                             </td>
                           );
                         })
                       )}
-                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-32.5 border-l border-gray-200">
+                      <td className="px-2 py-2.5 text-right text-gray-900 font-extrabold text-base border-l border-gray-200">
                         {operatorRows.reduce((sum, op) => sum + (op.total || 0), 0)}
                       </td>
-                      <td className="px-6 py-4 text-right text-gray-900 font-extrabold text-base min-w-30">
+                      <td className="px-2 py-2.5 text-right text-gray-900 font-extrabold text-base">
                         {operatorRows.reduce((sum, op) => sum + (op.cuts || 0), 0)}
                       </td>
                     </tr>
