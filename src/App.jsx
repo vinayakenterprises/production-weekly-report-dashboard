@@ -1,4 +1,4 @@
-import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Check, ChevronRight, Activity, Calendar, Filter, RotateCcw, X } from 'lucide-react';
+import { CirclePause, ClockFading, Scissors, TriangleAlert, User2, Check, ChevronRight, Activity, Calendar, Filter, RotateCcw, X, Sun, Moon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 
 // UTILITY FUNCTIONS
@@ -46,6 +46,7 @@ const formatDateRangeLabel = (startStr, endStr) => {
 };
 
 // Splits a combined fault category and specific cause string (e.g. "Category (Cause)")
+// eslint-disable-next-line no-unused-vars
 const splitFaultName = (fullName) => {
   if (!fullName) return { category: "Unspecified", cause: "-" };
   const matches = fullName.match(/^([^(]+)(?:\(([^)]+)\))?$/);
@@ -156,7 +157,7 @@ const normalizeAllDailyData = (weeklyData) => {
     const parts = w.week.split('-').map(Number);
     if (parts.length !== 3 || parts.some(isNaN)) return;
     const [year, month, day] = parts;
-    const baseDate = new Date(year, month - 1, day);
+    const baseDate = new Date(year, month - 1, day, 12, 0, 0);
 
     const sourceBreakdown = w.dailyIssueBreakdown || [];
 
@@ -169,13 +170,21 @@ const normalizeAllDailyData = (weeklyData) => {
       const dd = String(d.getDate()).padStart(2, '0');
       const dateStr = `${yyyy}-${mm}-${dd}`;
 
-      const dateLabel = `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]}`;
-      const dateLabelAlt = `${months[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`;
+      const dayNum = d.getDate();
+      const monthStr = months[d.getMonth()];
+      const dateLabel = `${String(dayNum).padStart(2, '0')} ${monthStr}`;
+      const dateLabelAlt = `${monthStr} ${String(dayNum).padStart(2, '0')}`;
 
-      let record = sourceBreakdown.find(r => r.date === dateLabel || r.date === dateLabelAlt);
-      if (!record && sourceBreakdown[i]) {
-        record = sourceBreakdown[i];
-      }
+      const record = sourceBreakdown.find(r => {
+        if (!r.date) return false;
+        const normalized = r.date.trim().toLowerCase();
+        return (
+          normalized === `${String(dayNum).padStart(2, '0')} ${monthStr}`.toLowerCase() ||
+          normalized === `${dayNum} ${monthStr}`.toLowerCase() ||
+          normalized === `${monthStr} ${String(dayNum).padStart(2, '0')}`.toLowerCase() ||
+          normalized === `${monthStr} ${dayNum}`.toLowerCase()
+        );
+      });
 
       allDays.push({
         dateStr,
@@ -215,6 +224,9 @@ export default function ProductionDashboard() {
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [expandedDay, setExpandedDay] = useState(null);
+
+  // Shift Selector Tab State for Operator & Issues Overview Table ('all' | 'Day' | 'Night')
+  const [selectedShiftTab, setSelectedShiftTab] = useState('all');
 
   const API_URL = import.meta.env.VITE_API_URL;
 
@@ -278,10 +290,6 @@ export default function ProductionDashboard() {
     fetchData();
   }, [API_URL]);
 
-  useEffect(() => {
-    setExpandedDay(null);
-  }, [startDate, endDate]);
-
   // Handle Week Selection Dropdown Change
   const handleWeekSelect = (weekStr) => {
     setSelectedWeek(weekStr);
@@ -293,6 +301,7 @@ export default function ProductionDashboard() {
     setTempEndDate(e);
     setFilterMode('week');
     setDropdownOpen(false);
+    setExpandedDay(null);
   };
 
   // Apply Filter from Popover Modal
@@ -307,6 +316,7 @@ export default function ProductionDashboard() {
     setEndDate(e);
     setFilterMode('range');
     setFilterPopoverOpen(false);
+    setExpandedDay(null);
   };
 
   // Clear Filter from Popover Modal
@@ -319,6 +329,7 @@ export default function ProductionDashboard() {
     setTempEndDate(e);
     setFilterMode('week');
     setFilterPopoverOpen(false);
+    setExpandedDay(null);
   };
 
   // Filtered daily entries based on active date range [startDate, endDate]
@@ -332,13 +343,35 @@ export default function ProductionDashboard() {
     return filteredDays.reduce((sum, d) => sum + (d.productionHoursLost || 0), 0);
   }, [filteredDays]);
 
-  // Total cuts in range
+  // Total cuts in range (from weeklyData.totalCuts or operatorRows)
   const totalCuts = useMemo(() => {
+    let apiTotalCuts = 0;
+    let hasWeeklyTotalCuts = false;
+
+    weeklyData.forEach(w => {
+      if (!w.week || typeof w.totalCuts !== 'number') return;
+      const weekParts = w.week.split('-').map(Number);
+      if (weekParts.length !== 3) return;
+      const weekStart = new Date(weekParts[0], weekParts[1] - 1, weekParts[2]);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+
+      const matchesFilter = filteredDays.some(d => d.dateObj >= weekStart && d.dateObj <= weekEnd);
+      if (matchesFilter) {
+        hasWeeklyTotalCuts = true;
+        apiTotalCuts += w.totalCuts;
+      }
+    });
+
+    if (hasWeeklyTotalCuts) {
+      return apiTotalCuts;
+    }
+
     return filteredDays.reduce((sum, d) => {
       const dayCuts = (d.issues || []).reduce((iSum, issue) => iSum + (issue.cuts || 0), 0);
       return sum + dayCuts;
     }, 0);
-  }, [filteredDays]);
+  }, [filteredDays, weeklyData]);
 
   // Fault categories & top loss incident in range
   const whereTheHoursWent = useMemo(() => {
@@ -362,36 +395,185 @@ export default function ProductionDashboard() {
     : { name: 'None', hours: 0, occurrences: 0 };
 
   const faultCategories = useMemo(() => {
-    const catSet = new Set();
-    filteredDays.forEach(day => {
-      (day.issues || []).forEach(issue => {
-        if (issue.name) catSet.add(issue.name);
-      });
+    return whereTheHoursWent
+      .filter(item => !isUnattributedIssue(item.name))
+      .map(item => item.name);
+  }, [whereTheHoursWent]);
+
+  const issueHoursMap = useMemo(() => {
+    const map = {};
+    whereTheHoursWent.forEach(item => {
+      map[item.name] = item.hours;
     });
-    return Array.from(catSet);
-  }, [filteredDays]);
+    return map;
+  }, [whereTheHoursWent]);
 
   // Operator Rows matrix in range
   const operatorRows = useMemo(() => {
     const byName = {};
+
+    // 1. Process issues across filteredDays for totals, breakdown, hoursLost, and shiftCounts
     filteredDays.forEach(day => {
       (day.issues || []).forEach(issue => {
-        const cuts = issue.cuts || 0;
         const occurrences = issue.occurrences || 0;
-        const operators = issue.operators && issue.operators.length > 0 ? issue.operators : ['Unattributed'];
+        const hours = issue.productionHoursLost || 0;
 
-        operators.forEach(opName => {
-          if (!byName[opName]) {
-            byName[opName] = { name: opName, total: 0, breakdown: {}, cuts: 0 };
+        let rawShifts = [];
+        if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
+          rawShifts = issue.shifts;
+        } else if (typeof issue.shifts === 'string' && issue.shifts.trim()) {
+          rawShifts = [issue.shifts.trim()];
+        } else if (typeof issue.shift === 'string' && issue.shift.trim()) {
+          rawShifts = [issue.shift.trim()];
+        } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
+          rawShifts = issue.shift;
+        }
+
+        const rawOperators = issue.operators && issue.operators.length > 0 ? issue.operators : ['Unattributed'];
+
+        const operators = rawOperators.map(name => {
+          if (!name) return 'Unattributed';
+          const trimmed = name.trim();
+          if (trimmed.toLowerCase() === 'uncommented' || trimmed.toLowerCase() === 'unknown') return 'Unattributed';
+          if (trimmed.includes('/')) {
+            return trimmed.split('/').map(part => {
+              const p = part.trim();
+              return p.charAt(0).toUpperCase() + p.slice(1);
+            }).join(' / ');
           }
-          byName[opName].total += occurrences;
-          byName[opName].breakdown[issue.name] = (byName[opName].breakdown[issue.name] || 0) + occurrences;
-          byName[opName].cuts += cuts;
+          return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+        });
+
+        operators.forEach((opName, opIdx) => {
+          if (!byName[opName]) {
+            byName[opName] = {
+              name: opName,
+              total: 0,
+              breakdown: {},
+              cuts: 0,
+              hoursLost: 0,
+              shiftCounts: { Day: 0, Night: 0 }
+            };
+          }
+
+          const originalOpName = rawOperators[opIdx] || opName;
+          const opDetail = issue.operatorDetails?.find(d => d.name?.trim().toLowerCase() === originalOpName.toLowerCase()) || issue.operatorDetails?.[opIdx];
+
+          const opShifts = (opDetail && Array.isArray(opDetail.shifts) && opDetail.shifts.length > 0)
+            ? opDetail.shifts
+            : rawShifts;
+
+          const opOccurrences = (opDetail && Array.isArray(opDetail.shifts) && opDetail.shifts.length > 0)
+            ? opDetail.shifts.length
+            : (occurrences / operators.length);
+
+          byName[opName].total += opOccurrences;
+          byName[opName].breakdown[issue.name] = (byName[opName].breakdown[issue.name] || 0) + opOccurrences;
+
+          const proportion = occurrences > 0 ? (opOccurrences / occurrences) : (1 / operators.length);
+          byName[opName].hoursLost += hours * proportion;
+
+          opShifts.forEach(s => {
+            if (!s) return;
+            const str = String(s).trim();
+            const normalized = str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+            if (normalized === 'Day' || normalized === 'Night') {
+              byName[opName].shiftCounts[normalized] = (byName[opName].shiftCounts[normalized] || 0) + 1;
+            }
+          });
         });
       });
     });
-    return Object.values(byName).sort((a, b) => b.total - a.total);
-  }, [filteredDays]);
+
+    // 2. Populate exact cuts from weeklyData.operatorCuts when available in API response
+    let hasExactAPICuts = false;
+    weeklyData.forEach(w => {
+      if (!w.week || !Array.isArray(w.operatorCuts) || w.operatorCuts.length === 0) return;
+
+      const weekParts = w.week.split('-').map(Number);
+      if (weekParts.length !== 3) return;
+      const weekStart = new Date(weekParts[0], weekParts[1] - 1, weekParts[2]);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+
+      const matchesFilter = filteredDays.some(d => d.dateObj >= weekStart && d.dateObj <= weekEnd);
+      if (matchesFilter) {
+        hasExactAPICuts = true;
+        w.operatorCuts.forEach(oc => {
+          if (!oc.name) return;
+          const normName = oc.name.trim().charAt(0).toUpperCase() + oc.name.trim().slice(1);
+          let targetKey = Object.keys(byName).find(k => k.toLowerCase() === normName.toLowerCase()) || normName;
+          if (!byName[targetKey]) {
+            byName[targetKey] = {
+              name: targetKey,
+              total: 0,
+              breakdown: {},
+              cuts: 0,
+              hoursLost: 0,
+              shiftCounts: { Day: 0, Night: 0 }
+            };
+          }
+          byName[targetKey].cuts += (oc.cuts || 0);
+        });
+      }
+    });
+
+    // 3. Fallback for cuts if API operatorCuts array was not present
+    if (!hasExactAPICuts) {
+      filteredDays.forEach(day => {
+        (day.issues || []).forEach(issue => {
+          const cuts = issue.cuts || 0;
+          const occurrences = issue.occurrences || 0;
+          const rawOperators = issue.operators && issue.operators.length > 0 ? issue.operators : ['Unattributed'];
+          const operators = rawOperators.map(name => {
+            if (!name) return 'Unattributed';
+            const trimmed = name.trim();
+            if (trimmed.toLowerCase() === 'uncommented' || trimmed.toLowerCase() === 'unknown') return 'Unattributed';
+            if (trimmed.includes('/')) {
+              return trimmed.split('/').map(part => part.trim().charAt(0).toUpperCase() + part.trim().slice(1)).join(' / ');
+            }
+            return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+          });
+
+          operators.forEach((opName, opIdx) => {
+            const originalOpName = rawOperators[opIdx] || opName;
+            const opDetail = issue.operatorDetails?.find(d => d.name?.trim().toLowerCase() === originalOpName.toLowerCase()) || issue.operatorDetails?.[opIdx];
+            const opOccurrences = (opDetail && Array.isArray(opDetail.shifts) && opDetail.shifts.length > 0)
+              ? opDetail.shifts.length
+              : (occurrences / operators.length);
+            const proportion = occurrences > 0 ? (opOccurrences / occurrences) : (1 / operators.length);
+            if (byName[opName]) {
+              byName[opName].cuts += cuts * proportion;
+            }
+          });
+        });
+      });
+    }
+
+    // Round breakdown and total counts to clean integers at the end
+    Object.values(byName).forEach(op => {
+      op.cuts = Math.round(op.cuts);
+      op.total = Math.round(op.total);
+      if (op.breakdown) {
+        Object.keys(op.breakdown).forEach(k => {
+          op.breakdown[k] = Math.round(op.breakdown[k]);
+        });
+      }
+    });
+
+    return Object.values(byName).sort((a, b) => b.cuts - a.cuts || b.hoursLost - a.hoursLost || b.total - a.total);
+  }, [filteredDays, weeklyData]);
+
+  // Filter operator rows by selectedShiftTab ('all' | 'Day' | 'Night')
+  const displayedOperatorRows = useMemo(() => {
+    if (selectedShiftTab === 'Day') {
+      return operatorRows.filter(op => (op.shiftCounts?.Day || 0) > 0);
+    }
+    if (selectedShiftTab === 'Night') {
+      return operatorRows.filter(op => (op.shiftCounts?.Night || 0) > 0);
+    }
+    return operatorRows;
+  }, [operatorRows, selectedShiftTab]);
 
   const topOperator = operatorRows.length > 0
     ? operatorRows[0]
@@ -414,6 +596,11 @@ export default function ProductionDashboard() {
 
   const maxDayHours = useMemo(() => {
     return Math.max(0, ...filteredDays.map(d => d.productionHoursLost));
+  }, [filteredDays]);
+
+  const maxDayCuts = useMemo(() => {
+    if (filteredDays.length === 0) return 0;
+    return Math.max(0, ...filteredDays.map(d => (d.issues || []).reduce((sum, i) => sum + (i.cuts || 0), 0)));
   }, [filteredDays]);
 
   const hasAnyDailyIssues = filteredDays.some(d => d.issues && d.issues.length > 0);
@@ -453,7 +640,7 @@ export default function ProductionDashboard() {
         {/* HEADER & TOP CONTROL BAR */}
         <header className="border-b border-gray-200 pb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="space-y-1 text-left">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">Vinayak Enterprises</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Vinayak Enterprises</h1>
             <p className="text-gray-700 text-md font-bold">Production Analytics Dashboard</p>
           </div>
 
@@ -566,14 +753,14 @@ export default function ProductionDashboard() {
                         onClick={handleClearFilter}
                         className="flex-1 py-2.5 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 text-xs font-extrabold hover:bg-gray-50 active:bg-gray-100 transition cursor-pointer shadow-2xs"
                       >
-                        Clear Filter
+                        Clear filter
                       </button>
                       <button
                         type="button"
                         onClick={handleApplyFilter}
                         className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-extrabold transition cursor-pointer shadow-md hover:shadow-lg"
                       >
-                        Apply Filter
+                        Apply filter
                       </button>
                     </div>
 
@@ -591,11 +778,11 @@ export default function ProductionDashboard() {
             <div className="flex items-center gap-2">
               <Calendar className="size-4 text-indigo-600" />
               <span>
-                Active Filter Range: <span className="font-extrabold">{formatDateRangeLabel(startDate, endDate)}</span>
+                Active filter range: <span className="font-extrabold">{formatDateRangeLabel(startDate, endDate)}</span>
               </span>
               {daysCount > 0 && (
                 <span className="bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded text-[10px] font-extrabold ml-1">
-                  {daysCount} {daysCount === 1 ? 'Day' : 'Days'}
+                  {daysCount} {daysCount === 1 ? 'day' : 'days'}
                 </span>
               )}
             </div>
@@ -604,7 +791,7 @@ export default function ProductionDashboard() {
               className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-900 font-extrabold cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs transition"
             >
               <X className="size-3.5" />
-              Clear Filter
+              Clear filter
             </button>
           </div>
         )}
@@ -613,7 +800,7 @@ export default function ProductionDashboard() {
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 capitalize">Total Hours Lost</span>
+              <span className="text-sm font-bold text-gray-800">Total Hours Lost</span>
               <div className="bg-red-50 p-2 rounded-lg">
                 <ClockFading className='text-red-500 size-6' />
               </div>
@@ -627,14 +814,14 @@ export default function ProductionDashboard() {
 
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 capitalize">Top Loss Incident</span>
+              <span className="text-sm font-bold text-gray-800">Top Loss Incident</span>
               <div className="bg-amber-50 p-2 rounded-lg">
                 <TriangleAlert className='text-amber-500 size-6' />
               </div>
             </div>
             <div className="mt-4">
               <p className="text-xl font-bold text-gray-900 truncate" title={topFault.name}>
-                {topFault.name !== 'None' ? topFault.name : 'No Faults'}
+                {topFault.name !== 'None' ? topFault.name : 'No faults'}
               </p>
               {topFault.name !== 'None' ? (
                 <span className="text-xs text-red-500 font-bold">
@@ -650,7 +837,7 @@ export default function ProductionDashboard() {
 
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 capitalize">Top Operator</span>
+              <span className="text-sm font-bold text-gray-800">Top Operator</span>
               <div className="bg-purple-50 p-2 rounded-lg">
                 <User2 className='text-purple-500 size-6' />
               </div>
@@ -661,7 +848,7 @@ export default function ProductionDashboard() {
               </p>
               {topOperator.name !== 'None' && (
                 <span className="text-xs text-purple-600 font-bold">
-                  {topOperator.total} incidents
+                  {topOperator.total} {topOperator.total === 1 ? 'incident' : 'incidents'}
                 </span>
               )}
             </div>
@@ -669,14 +856,14 @@ export default function ProductionDashboard() {
 
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 capitalize">Most Frequent Issue</span>
+              <span className="text-sm font-bold text-gray-800">Most Frequent Issue</span>
               <div className="bg-blue-50 p-2 rounded-lg">
                 <Activity className='text-red-500 size-6' />
               </div>
             </div>
             <div className="mt-4">
-              <p className="text-xl font-bold text-gray-900 truncate" title={mostFrequentIncident.name !== 'None' ? mostFrequentIncident.name : 'No Incidents'}>
-                {mostFrequentIncident.name !== 'None' ? getCleanMainIssue(mostFrequentIncident.name) : 'No Incidents'}
+              <p className="text-xl font-bold text-gray-900 truncate" title={mostFrequentIncident.name !== 'None' ? mostFrequentIncident.name : 'No incidents'}>
+                {mostFrequentIncident.name !== 'None' ? getCleanMainIssue(mostFrequentIncident.name) : 'No incidents'}
               </p>
               {mostFrequentIncident.name !== 'None' ? (
                 <span className="text-xs text-red-600 font-bold">
@@ -692,14 +879,14 @@ export default function ProductionDashboard() {
 
           <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 capitalize">Cuts In Range</span>
+              <span className="text-sm font-bold text-gray-800">Cuts In Range</span>
               <div className="bg-emerald-50 p-2 rounded-lg">
                 <Scissors className='text-emerald-500 size-6' />
               </div>
             </div>
             <div className="mt-4">
               <p className="text-xl font-black tracking-tight text-gray-900">
-                {totalCuts} cuts
+                {totalCuts} {totalCuts === 1 ? 'cut' : 'cuts'}
               </p>
             </div>
           </div>
@@ -728,7 +915,7 @@ export default function ProductionDashboard() {
             <div className="bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden">
               <div className="p-6 border-b border-gray-100 bg-white flex items-center justify-between">
                 <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
-                  Daily Production Hours Lost Overview
+                  DAILY PRODUCTION HOURS LOST OVERVIEW
                 </h2>
               </div>
 
@@ -796,11 +983,11 @@ export default function ProductionDashboard() {
                             <table className="w-full text-left text-sm whitespace-nowrap">
                               <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                  <th className="px-5 py-3.5 font-semibold text-gray-600">Issue Description</th>
-                                  <th className="px-5 py-3.5 font-semibold text-gray-600 text-center">Occurrences</th>
-                                  <th className="px-5 py-3.5 font-semibold text-gray-600">Operator(s)</th>
-                                  <th className="px-5 py-3.5 font-semibold text-gray-600 text-right">Cuts</th>
-                                  <th className="px-5 py-3.5 font-semibold text-gray-600 text-right">Time Lost</th>
+                                  <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs">ISSUE DESCRIPTION</th>
+                                  <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-center">OCCURRENCES</th>
+                                  <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs">OPERATOR(S)</th>
+                                  <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right">CUTS</th>
+                                  <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right">TIME LOST</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
@@ -860,70 +1047,163 @@ export default function ProductionDashboard() {
 
             {/* Operator Matrix Table */}
             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs overflow-hidden">
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
-                Operator & Issues Overview
-              </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 pb-3 mb-5 gap-3">
+                <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
+                  OPERATOR & ISSUES OVERVIEW
+                </h2>
+
+                {/* Shift Selector Buttons */}
+                <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl border border-gray-200 text-xs flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedShiftTab('all')}
+                    className={`px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition-all duration-150 ${selectedShiftTab === 'all'
+                      ? 'bg-gray-900 text-white shadow-xs border border-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+                      }`}
+                  >
+                    All Operators ({operatorRows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedShiftTab(selectedShiftTab === 'Day' ? 'all' : 'Day')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition-all duration-150 ${selectedShiftTab === 'Day'
+                      ? 'bg-amber-500 text-white shadow-xs border border-amber-600 ring-2 ring-amber-300'
+                      : 'text-amber-900 bg-amber-100/60 hover:bg-amber-200/70 border border-amber-200/50'
+                      }`}
+                  >
+                    <Sun className={`size-3.5 ${selectedShiftTab === 'Day' ? 'text-white' : 'text-amber-600'}`} />
+                    Day Shift
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedShiftTab(selectedShiftTab === 'Night' ? 'all' : 'Night')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition-all duration-150 ${selectedShiftTab === 'Night'
+                      ? 'bg-indigo-600 text-white shadow-xs border border-indigo-700 ring-2 ring-indigo-300'
+                      : 'text-indigo-900 bg-indigo-100/60 hover:bg-indigo-200/70 border border-indigo-200/50'
+                      }`}
+                  >
+                    <Moon className={`size-3.5 ${selectedShiftTab === 'Night' ? 'text-white' : 'text-indigo-600'}`} />
+                    Night Shift
+                  </button>
+                </div>
+              </div>
+
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-separate border-spacing-0">
                   <thead>
                     <tr className="bg-gray-200/60 border-b border-gray-300">
-                      <th className="bg-gray-200 px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] rounded-l-lg border-r border-gray-300 wrap-break-word">Operator</th>
+                      <th className="bg-gray-200 px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] rounded-l-lg border-r border-gray-300 wrap-break-word">OPERATOR</th>
                       {faultCategories.length === 0 ? (
-                        <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] text-center">Faults</th>
+                        <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] text-center">FAULTS</th>
                       ) : (
                         faultCategories.map(category => {
                           const headerLabel = getCleanMainIssue(category);
                           return (
                             <th key={category} title={category} className="px-2 py-2.5 font-bold text-gray-700 tracking-wider text-[10px] text-center wrap-break-word leading-tight">
-                              {headerLabel}
+                              <div>{headerLabel}</div>
                             </th>
                           );
                         })
                       )}
-                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right border-l border-gray-300 wrap-break-word leading-tight">Total Faults</th>
-                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right rounded-r-lg wrap-break-word leading-tight">Total Cuts</th>
+                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right border-gray-300 wrap-break-word leading-tight">TOTAL FAULTS</th>
+                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right border-gray-300  wrap-break-word leading-tight">TOTAL HOURS LOST</th>
+                      <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right rounded-r-lg wrap-break-word leading-tight">TOTAL CUTS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {operatorRows.length === 0 ? (
+                    {displayedOperatorRows.length === 0 ? (
                       <tr>
-                        <td colSpan={faultCategories.length > 0 ? faultCategories.length + 3 : 4} className="px-4 py-8 text-center text-sm text-gray-500 italic">
-                          No operator records found for this date range.
+                        <td colSpan={faultCategories.length > 0 ? faultCategories.length + 4 : 5} className="px-4 py-8 text-center text-sm text-gray-500 italic">
+                          No operator records found for this date range and shift selection.
                         </td>
                       </tr>
                     ) : (
-                      operatorRows.map((operator) => (
-                        <tr key={operator.name} className="group hover:bg-gray-50/80 transition-colors">
-                          <td className="px-3 py-2.5 font-bold text-gray-900 text-xs border-r border-gray-200 break-words">{operator.name}</td>
-                          {faultCategories.map(category => {
-                            const count = operator.breakdown ? (operator.breakdown[category] || 0) : 0;
-                            return (
-                              <td key={category} className="px-1.5 py-2.5 text-center">
-                                {count > 0 ? (
-                                  <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-extrabold px-2.5 py-0.5 rounded-md text-sm">
-                                    {count}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300 font-medium text-xs">-</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                          <td className="px-2 py-2.5 text-right font-extrabold text-gray-900 text-sm border-l border-gray-100">{operator.total}</td>
-                          <td className="px-2 py-2.5 text-right font-extrabold text-gray-900 text-sm">{operator.cuts}</td>
-                        </tr>
-                      ))
+                      displayedOperatorRows.map((operator) => {
+                        const dayCount = operator.shiftCounts?.Day || 0;
+                        const nightCount = operator.shiftCounts?.Night || 0;
+                        const hasDay = dayCount > 0;
+                        const hasNight = nightCount > 0;
+
+                        // Apply background color to every td cell directly because table uses border-separate
+                        let tdBgClass = "bg-white group-hover:bg-gray-50/80";
+                        let borderLeftClass = "border-l-4 border-l-transparent";
+
+                        if (hasDay && !hasNight) {
+                          tdBgClass = "bg-amber-50/80 group-hover:bg-amber-100/90";
+                          borderLeftClass = "border-l-4 border-l-amber-500";
+                        } else if (hasNight && !hasDay) {
+                          tdBgClass = "bg-indigo-50/80 group-hover:bg-indigo-100/90";
+                          borderLeftClass = "border-l-4 border-l-indigo-500";
+                        } else if (hasDay && hasNight) {
+                          tdBgClass = "bg-purple-50/80 group-hover:bg-purple-100/90";
+                          borderLeftClass = "border-l-4 border-l-purple-500";
+                        }
+
+                        return (
+                          <tr key={operator.name} className="group transition-colors">
+                            {/* Operator Cell */}
+                            <td className={`px-3 py-3 font-bold text-gray-900 text-xs border-r border-b border-gray-200 break-words ${tdBgClass} ${borderLeftClass}`}>
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <span className="font-extrabold text-gray-900 text-xs">{operator.name}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {hasDay && (
+                                    <span
+                                      title={`Day shift (${dayCount} occurrences)`}
+                                      className="inline-flex items-center gap-1 bg-amber-200 text-amber-950 font-black px-2 py-0.5 rounded-full text-[10px] border border-amber-300 shadow-2xs"
+                                    >
+                                      <Sun className="size-3 text-amber-700" />
+                                      Day
+                                    </span>
+                                  )}
+                                  {hasNight && (
+                                    <span
+                                      title={`Night shift (${nightCount} occurrences)`}
+                                      className="inline-flex items-center gap-1 bg-indigo-200 text-indigo-950 font-black px-2 py-0.5 rounded-full text-[10px] border border-indigo-300 shadow-2xs"
+                                    >
+                                      <Moon className="size-3 text-indigo-700" />
+                                      Night
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Fault Category Cells */}
+                            {faultCategories.map(category => {
+                              const count = operator.breakdown ? (operator.breakdown[category] || 0) : 0;
+                              return (
+                                <td key={category} className={`px-1.5 py-3 text-center border-b border-gray-200 ${tdBgClass}`}>
+                                  {count > 0 ? (
+                                    <span className="inline-flex items-center justify-center bg-orange-100 text-orange-800 font-extrabold px-2.5 py-0.5 rounded-md text-sm border border-orange-200">
+                                      {count}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300 font-medium text-xs">-</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            {/* Summary Columns */}
+                            <td className={`px-2 py-3 text-right font-extrabold text-gray-900 text-sm border-l border-b border-gray-200 ${tdBgClass}`}>{operator.total}</td>
+                            <td className={`px-2 py-3 text-right font-extrabold text-red-600 text-sm border-l border-b border-gray-200 ${tdBgClass}`}>{formatTime(operator.hoursLost)}</td>
+                            <td className={`px-2 py-3 text-right font-extrabold text-gray-900 text-sm border-b border-gray-200 ${tdBgClass}`}>{operator.cuts}</td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
-                  {operatorRows.length > 0 && (
+                  {displayedOperatorRows.length > 0 && (
                     <tfoot className="border-t-2 border-gray-300 bg-gray-100/90 font-bold">
-                      <tr>
-                        <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300">Total</td>
+                      {/* Row 1: Total Faults per Issue */}
+                      <tr className="border-b border-gray-200">
+                        <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300 whitespace-nowrap">TOTAL FAULTS</td>
                         {faultCategories.length === 0 ? (
                           <td className="px-2 py-2.5 text-center text-gray-900 font-extrabold text-sm">0</td>
                         ) : (
                           faultCategories.map(category => {
-                            const catTotal = operatorRows.reduce((sum, op) => sum + (op.breakdown?.[category] || 0), 0);
+                            const catTotal = displayedOperatorRows.reduce((sum, op) => sum + (op.breakdown?.[category] || 0), 0);
                             const isMostFrequent = category === mostFrequentIncident.name && catTotal > 0;
                             return (
                               <td key={category} className="px-1.5 py-2.5 text-center">
@@ -935,9 +1215,6 @@ export default function ProductionDashboard() {
                                       }`}>
                                       {catTotal}
                                     </span>
-                                    {isMostFrequent && (
-                                      <span className="text-[9px] font-bold text-red-600 uppercase tracking-tight leading-none">Most Frequent</span>
-                                    )}
                                   </div>
                                 ) : (
                                   <span className="text-gray-400 font-medium text-xs">-</span>
@@ -947,10 +1224,156 @@ export default function ProductionDashboard() {
                           })
                         )}
                         <td className="px-2 py-2.5 text-right text-gray-900 font-extrabold text-base border-l border-gray-200">
-                          {operatorRows.reduce((sum, op) => sum + (op.total || 0), 0)}
+                          {displayedOperatorRows.reduce((sum, op) => sum + (op.total || 0), 0)}
+                        </td>
+                        <td className="px-2 py-2.5 text-right text-gray-400 font-medium text-xs border-l border-gray-200">
+                          -
                         </td>
                         <td className="px-2 py-2.5 text-right text-gray-900 font-extrabold text-base">
-                          {operatorRows.reduce((sum, op) => sum + (op.cuts || 0), 0)}
+                          {displayedOperatorRows.reduce((sum, op) => sum + (op.cuts || 0), 0)}
+                        </td>
+                      </tr>
+
+                      {/* Row 2: Total Hours Lost per Issue */}
+                      <tr>
+                        <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300 whitespace-nowrap">TOTAL HOURS LOST</td>
+                        {faultCategories.length === 0 ? (
+                          <td className="px-2 py-2.5 text-center text-gray-400 font-medium text-xs">-</td>
+                        ) : (
+                          faultCategories.map(category => {
+                            const catHours = issueHoursMap[category] || 0;
+                            return (
+                              <td key={category} className="px-1.5 py-2.5 text-center">
+                                {catHours > 0 ? (
+                                  <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">
+                                    {formatTime(catHours)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 font-medium text-xs">-</span>
+                                )}
+                              </td>
+                            );
+                          })
+                        )}
+                        <td className="px-2 py-2.5 text-right text-gray-400 font-medium text-xs border-l border-gray-200">
+                          -
+                        </td>
+                        <td className="px-2 py-2.5 text-right text-red-600 font-bold text-base border-l border-gray-200">
+                          {formatTime(displayedOperatorRows.reduce((sum, op) => sum + (op.hoursLost || 0), 0))}
+                        </td>
+                        <td className="px-2 py-2.5 text-right text-gray-400 font-medium text-xs">
+                          -
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+
+            {/* Day-Wise Cuts Overview Table */}
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs overflow-hidden">
+              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-3 mb-5">
+                DAY-WISE CUTS & ISSUE BREAKDOWN
+              </h2>
+
+              <div className="w-full overflow-x-auto">
+                <table className="w-full text-left text-xs border-separate border-spacing-0">
+                  <thead>
+                    <tr className="bg-gray-200/60 border-b border-gray-300">
+                      <th className="bg-gray-200 px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] rounded-l-lg border-r border-gray-300 wrap-break-word">DAY & DATE</th>
+                      <th className="px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px]">ISSUES RESPONSIBLE FOR CUTS</th>
+                      <th className="px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] sm:text-[11px] text-right rounded-r-lg border-l border-gray-300">TOTAL CUTS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {filteredDays.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500 italic">
+                          No cut records found for this date range.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDays.map((day) => {
+                        const dayCuts = (day.issues || []).reduce((sum, issue) => sum + (issue.cuts || 0), 0);
+                        const isMaxCutsDay = maxDayCuts > 0 && dayCuts === maxDayCuts;
+                        const issuesWithCuts = (day.issues || []).filter(issue => (issue.cuts || 0) > 0);
+
+                        return (
+                          <tr
+                            key={day.dateStr}
+                            className={`group transition-colors ${isMaxCutsDay
+                              ? 'bg-red-50/90 font-semibold text-red-950 border-l-4 border-red-500'
+                              : 'hover:bg-gray-50/80 text-gray-900'
+                              }`}
+                          >
+                            {/* Day & Date Column */}
+                            <td className="px-3 py-2.5 whitespace-nowrap border-r border-gray-200">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-bold text-sm ${isMaxCutsDay ? 'text-gray-950' : 'text-gray-900'}`}>
+                                  {day.weekday}
+                                </span>
+                                <span className={`text-sm text-gray-950`}>
+                                  {formatIsoDateLabel(day.dateStr)}
+                                </span>
+                                {isMaxCutsDay && (
+                                  <span className="inline-flex items-center gap-1 bg-red-200/90 text-red-950 border border-red-300 font-extrabold px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider">
+                                    Max cuts day
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Issues Responsible for Cuts */}
+                            <td className="px-3 py-2.5">
+                              {issuesWithCuts.length === 0 ? (
+                                <span className="text-xs text-gray-400 italic">No cuts recorded</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {issuesWithCuts.map((issue, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${isMaxCutsDay
+                                        ? 'bg-red-100/90 text-red-950 border-red-300'
+                                        : 'bg-gray-50 text-gray-900 border-gray-200/80'
+                                        }`}
+                                    >
+                                      <span>{issue.name}</span>
+                                      <span className={`px-1.5 py-0.2 rounded text-[11px] font-black ${isMaxCutsDay ? 'bg-red-300 text-red-950' : 'bg-gray-200 text-gray-900'}`}>
+                                        {issue.cuts} {issue.cuts === 1 ? 'cut' : 'cuts'}
+                                      </span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Total Cuts for Day */}
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-extrabold ${isMaxCutsDay
+                                  ? 'bg-red-500 text-white shadow-xs'
+                                  : dayCuts > 0
+                                    ? 'bg-gray-100 text-gray-900 font-bold'
+                                    : 'text-gray-400 font-medium'
+                                  }`}
+                              >
+                                {dayCuts} {dayCuts === 1 ? 'cut' : 'cuts'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {filteredDays.length > 0 && (
+                    <tfoot className="border-t-2 border-gray-300 bg-gray-100/90 font-bold">
+                      <tr>
+                        <td colSpan={2} className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300">
+                          TOTAL CUTS
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-gray-900 font-extrabold text-base">
+                          {totalCuts} cuts
                         </td>
                       </tr>
                     </tfoot>
