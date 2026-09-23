@@ -554,7 +554,7 @@ export default function CompanyDashboard({
           <p className="text-gray-700 text-md font-bold">{subtitle}</p>
         </div>
 
-        {/* TOP CONTROLS */}
+        {/* Top Controls */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Container with WEEK dropdown (showing weeks of current month) */}
           <div className="bg-gray-100/90 border border-gray-200/80 rounded-2xl px-3.5 py-1.5 flex items-center gap-2 shadow-2xs">
