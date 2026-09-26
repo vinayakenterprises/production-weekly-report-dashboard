@@ -90,6 +90,26 @@ export const getCleanMainIssue = (fullName) => {
 // lost hours for a day but no logged row can be attributed to a cause.
 export const isUnattributedIssue = (name) => !!name && name.startsWith("Unattributed");
 
+// Issues excluded from the Operator & Issues Overview table and overview metrics
+export const EXCLUDED_OVERVIEW_ISSUES = [
+  "Scheduled Holds (Dross/Maintenance)",
+  "Scheduled Holds",
+  "Mechanical (Cuppling/Share Pin)",
+  "Coiler Change",
+  "Ingot unavailable",
+  "Ingot Unavailable",
+  "Other",
+  "Others",
+];
+
+export const isExcludedOverviewIssue = (name) => {
+  if (!name || typeof name !== "string") return false;
+  const clean = name.trim().toLowerCase();
+  return EXCLUDED_OVERVIEW_ISSUES.some(
+    (item) => item.trim().toLowerCase() === clean,
+  );
+};
+
 // Helper to get the Monday of the current week in YYYY-MM-DD format
 export const getMondayOfCurrentWeek = () => {
   const d = new Date();
