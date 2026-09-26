@@ -23,6 +23,7 @@ import {
   formatDateRangeLabel,
   getCleanMainIssue,
   isUnattributedIssue,
+  isExcludedOverviewIssue,
   getMondayOfCurrentWeek,
   getWeekMajorityMonth,
   doesWeekOverlapMonth,
@@ -249,13 +250,13 @@ export default function CompanyDashboard({
     }, 0);
   }, [filteredDays, weeklyData]);
 
-  // Fault categories & top loss incident in range
+  // Fault categories & top loss incident in range (excluding overview excluded issues)
   const whereTheHoursWent = useMemo(() => {
     const byCategory = {};
     filteredDays.forEach((day) => {
       (day.issues || []).forEach((issue) => {
         const cat = issue.name;
-        if (!cat) return;
+        if (!cat || isExcludedOverviewIssue(cat)) return;
         if (!byCategory[cat]) {
           byCategory[cat] = { name: cat, hours: 0, occurrences: 0 };
         }
@@ -283,6 +284,7 @@ export default function CompanyDashboard({
 
     filteredDays.forEach((day) => {
       (day.issues || []).forEach((issue) => {
+        if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
         const occurrences = issue.occurrences || 0;
         const hours = issue.productionHoursLost || 0;
 
@@ -425,6 +427,7 @@ export default function CompanyDashboard({
     if (!hasExactAPICuts) {
       filteredDays.forEach((day) => {
         (day.issues || []).forEach((issue) => {
+          if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
           const cuts = issue.cuts || 0;
           const occurrences = issue.occurrences || 0;
           const rawOperators =
@@ -486,10 +489,12 @@ export default function CompanyDashboard({
       }
     });
 
-    return Object.values(byName).sort(
-      (a, b) =>
-        b.cuts - a.cuts || b.hoursLost - a.hoursLost || b.total - a.total,
-    );
+    return Object.values(byName)
+      .filter((op) => op.total > 0 || op.cuts > 0 || op.hoursLost > 0)
+      .sort(
+        (a, b) =>
+          b.cuts - a.cuts || b.hoursLost - a.hoursLost || b.total - a.total,
+      );
   }, [filteredDays, weeklyData]);
 
   // Filter operator rows by selectedShiftTab ('all' | 'Day' | 'Night')
@@ -1260,7 +1265,7 @@ export default function CompanyDashboard({
                             <td className="px-2.5 py-2.5 text-right font-black text-gray-900 border-l border-gray-200">
                               {op.total}
                             </td>
-                            <td className="px-2.5 py-2.5 text-right font-bold text-gray-700 border-l border-gray-200 whitespace-nowrap">
+                            <td className="px-2.5 py-2.5 text-right font-bold text-red-700 border-l border-gray-200 whitespace-nowrap">
                               {formatTime(op.hoursLost)}
                             </td>
                             <td className="px-2.5 py-2.5 text-right font-extrabold text-indigo-600 border-l border-gray-200">
@@ -1309,7 +1314,7 @@ export default function CompanyDashboard({
                               0,
                             )}
                           </td>
-                          <td className="px-2.5 py-2.5 text-right text-gray-900 font-extrabold border-l border-gray-300 whitespace-nowrap">
+                          <td className="px-2.5 py-2.5 text-right text-red-700 font-extrabold border-l border-gray-300 whitespace-nowrap">
                             {formatTime(
                               displayedOperatorRows.reduce(
                                 (sum, op) => sum + op.hoursLost,
@@ -1336,9 +1341,6 @@ export default function CompanyDashboard({
                   <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
                     DAY-BY-DAY CUTS BREAKDOWN
                   </h2>
-                  <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">
-                    Total: {totalCuts} cuts
-                  </span>
                 </div>
 
                 <div className="w-full overflow-x-auto">
