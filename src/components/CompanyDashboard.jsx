@@ -6,6 +6,7 @@ import {
   TriangleAlert,
   User2,
   Check,
+  ChevronLeft,
   ChevronRight,
   Activity,
   Calendar,
@@ -25,6 +26,9 @@ import {
   isUnattributedIssue,
   isExcludedOverviewIssue,
   getMondayOfCurrentWeek,
+  getCurrentMonthKey,
+  formatMonthLabel,
+  getAvailableMonths,
   getWeekMajorityMonth,
   doesWeekOverlapMonth,
   addDaysToStr,
@@ -46,6 +50,7 @@ export default function CompanyDashboard({
   // Filter States
   const [filterMode, setFilterMode] = useState("week"); // 'week' or 'range'
   const [selectedWeek, setSelectedWeek] = useState("");
+  const [activeMonth, setActiveMonth] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -75,18 +80,37 @@ export default function CompanyDashboard({
       ? allNormalizedDays[allNormalizedDays.length - 1].dateStr
       : "";
 
-  // Get current majority month key for the selected week
-  const currentMonthKey = useMemo(() => {
-    return selectedWeek ? getWeekMajorityMonth(selectedWeek) : "";
-  }, [selectedWeek]);
+  // Available unique months from dataset
+  const availableMonths = useMemo(
+    () => getAvailableMonths(weeklyData),
+    [weeklyData],
+  );
 
-  // Filter weeks to only those belonging to the current selected week's month
+  // Active month key for weeks dropdown (e.g. "2026-09")
+  const currentMonthKey = useMemo(() => {
+    if (activeMonth) return activeMonth;
+    const currentCalMonth = getCurrentMonthKey();
+    if (
+      weeklyData.some(
+        (w) => w.week && doesWeekOverlapMonth(w.week, currentCalMonth),
+      )
+    ) {
+      return currentCalMonth;
+    }
+    if (selectedWeek) return selectedWeek.substring(0, 7);
+    return availableMonths[availableMonths.length - 1] || currentCalMonth;
+  }, [activeMonth, selectedWeek, weeklyData, availableMonths]);
+
+  // Filter weeks to only those belonging to or overlapping the current month (sorted in ascending order)
   const currentMonthWeeks = useMemo(() => {
     if (!currentMonthKey) return weeklyData;
     const filtered = weeklyData.filter(
       (w) => w.week && doesWeekOverlapMonth(w.week, currentMonthKey),
     );
-    return filtered.length > 0 ? filtered : weeklyData;
+    const sorted = [...(filtered.length > 0 ? filtered : weeklyData)].sort(
+      (a, b) => a.week.localeCompare(b.week),
+    );
+    return sorted;
   }, [weeklyData, currentMonthKey]);
 
   const fetchData = async (showFullLoader = true) => {
@@ -133,6 +157,20 @@ export default function CompanyDashboard({
           setDropdownOpen(false);
           setExpandedDay(null);
           setSelectedShiftTab("all");
+
+          // Initialize activeMonth to current calendar month if overlapping data exists,
+          // otherwise default to the selected week's month
+          const currentCalMonth = getCurrentMonthKey();
+          const hasCurrentMonth = data.some(
+            (w) => w.week && doesWeekOverlapMonth(w.week, currentCalMonth),
+          );
+          if (hasCurrentMonth) {
+            setActiveMonth(currentCalMonth);
+          } else if (defaultWeekStr) {
+            setActiveMonth(defaultWeekStr.substring(0, 7));
+          } else {
+            setActiveMonth(currentCalMonth);
+          }
         } else {
           setSelectedWeek("");
           setStartDate("");
@@ -170,6 +208,28 @@ export default function CompanyDashboard({
     setFilterMode("week");
     setDropdownOpen(false);
     setExpandedDay(null);
+
+    // If selected week does not overlap current activeMonth, sync activeMonth
+    if (!doesWeekOverlapMonth(weekStr, currentMonthKey)) {
+      setActiveMonth(weekStr.substring(0, 7));
+    }
+  };
+
+  // Month navigation inside dropdown
+  const handlePrevMonth = (e) => {
+    e.stopPropagation();
+    const idx = availableMonths.indexOf(currentMonthKey);
+    if (idx > 0) {
+      setActiveMonth(availableMonths[idx - 1]);
+    }
+  };
+
+  const handleNextMonth = (e) => {
+    e.stopPropagation();
+    const idx = availableMonths.indexOf(currentMonthKey);
+    if (idx >= 0 && idx < availableMonths.length - 1) {
+      setActiveMonth(availableMonths[idx + 1]);
+    }
   };
 
   // Apply Filter from Popover Modal
@@ -600,6 +660,7 @@ export default function CompanyDashboard({
                       return (
                         <button
                           key={w.week}
+                          type="button"
                           onClick={() => handleWeekSelect(w.week)}
                           className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between cursor-pointer ${
                             isSelected
