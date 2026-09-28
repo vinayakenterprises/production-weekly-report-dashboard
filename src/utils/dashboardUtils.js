@@ -122,6 +122,69 @@ export const getMondayOfCurrentWeek = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Returns current calendar month in YYYY-MM format
+export const getCurrentMonthKey = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${yyyy}-${mm}`;
+};
+
+// Formats YYYY-MM into a friendly month label (e.g. "September 2026")
+export const formatMonthLabel = (monthKey) => {
+  if (!monthKey) return "";
+  const parts = monthKey.split("-").map(Number);
+  if (parts.length !== 2 || parts.some(isNaN)) return monthKey;
+  const [year, month] = parts;
+  const d = new Date(year, month - 1, 1);
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+// Gets sorted list of all available YYYY-MM months covered by weeklyData
+export const getAvailableMonths = (weeklyData) => {
+  if (!Array.isArray(weeklyData)) return [];
+  const monthSet = new Set();
+  const currentCalMonth = getCurrentMonthKey();
+
+  weeklyData.forEach((w) => {
+    if (!w.week) return;
+    monthSet.add(w.week.substring(0, 7));
+    const parts = w.week.split("-").map(Number);
+    if (parts.length === 3 && !parts.some(isNaN)) {
+      const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(baseDate);
+        d.setDate(baseDate.getDate() + i);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        monthSet.add(`${yyyy}-${mm}`);
+      }
+    }
+  });
+
+  return Array.from(monthSet)
+    .sort()
+    .filter(
+      (m) =>
+        m <= currentCalMonth ||
+        weeklyData.some((w) => w.week && w.week.startsWith(m)),
+    );
+};
+
 // Finds the month (YYYY-MM) that has the majority of days in a week starting on startMondayStr
 export const getWeekMajorityMonth = (startMondayStr) => {
   if (!startMondayStr) return "";
