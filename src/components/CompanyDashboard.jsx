@@ -342,201 +342,303 @@ export default function CompanyDashboard({
   const operatorRows = useMemo(() => {
     const byName = {};
 
-    filteredDays.forEach((day) => {
-      (day.issues || []).forEach((issue) => {
-        if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
-        const occurrences = issue.occurrences || 0;
-        const hours = issue.productionHoursLost || 0;
-
-        let rawShifts = [];
-        if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
-          rawShifts = issue.shifts;
-        } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
-          rawShifts = [issue.shifts.trim()];
-        } else if (typeof issue.shift === "string" && issue.shift.trim()) {
-          rawShifts = [issue.shift.trim()];
-        } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
-          rawShifts = issue.shift;
-        }
-
-        const rawOperators =
-          issue.operators && issue.operators.length > 0
-            ? issue.operators
-            : ["Unattributed"];
-
-        const operators = rawOperators.map((name) => {
-          if (!name) return "Unattributed";
-          const trimmed = name.trim();
-          if (
-            trimmed.toLowerCase() === "uncommented" ||
-            trimmed.toLowerCase() === "unknown"
-          )
-            return "Unattributed";
-          if (trimmed.includes("/")) {
-            return trimmed
-              .split("/")
-              .map((part) => {
-                const p = part.trim();
-                return p.charAt(0).toUpperCase() + p.slice(1);
-              })
-              .join(" / ");
-          }
-          return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-        });
-
-        operators.forEach((opName, opIdx) => {
-          if (!byName[opName]) {
-            byName[opName] = {
-              name: opName,
-              total: 0,
-              breakdown: {},
-              cuts: 0,
-              hoursLost: 0,
-              shiftCounts: { Day: 0, Night: 0 },
-            };
-          }
-
-          const originalOpName = rawOperators[opIdx] || opName;
-          const opDetail =
-            issue.operatorDetails?.find(
-              (d) =>
-                d.name?.trim().toLowerCase() === originalOpName.toLowerCase(),
-            ) || issue.operatorDetails?.[opIdx];
-
-          const opShifts =
-            opDetail &&
-            Array.isArray(opDetail.shifts) &&
-            opDetail.shifts.length > 0
-              ? opDetail.shifts
-              : rawShifts;
-
-          const opOccurrences =
-            opDetail &&
-            Array.isArray(opDetail.shifts) &&
-            opDetail.shifts.length > 0
-              ? opDetail.shifts.length
-              : occurrences / operators.length;
-
-          byName[opName].total += opOccurrences;
-          byName[opName].breakdown[issue.name] =
-            (byName[opName].breakdown[issue.name] || 0) + opOccurrences;
-
-          const proportion =
-            occurrences > 0
-              ? opOccurrences / occurrences
-              : 1 / operators.length;
-          byName[opName].hoursLost += hours * proportion;
-
-          opShifts.forEach((s) => {
-            if (!s) return;
-            const str = String(s).trim();
-            const normalized =
-              str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-            if (normalized === "Day" || normalized === "Night") {
-              byName[opName].shiftCounts[normalized] =
-                (byName[opName].shiftCounts[normalized] || 0) + 1;
-            }
-          });
-        });
-      });
-    });
-
-    let hasExactAPICuts = false;
-    weeklyData.forEach((w) => {
+    const normalizeOpName = (name) => {
+      if (!name) return "Unattributed";
+      const trimmed = String(name).trim();
       if (
-        !w.week ||
-        !Array.isArray(w.operatorCuts) ||
-        w.operatorCuts.length === 0
+        trimmed.toLowerCase() === "uncommented" ||
+        trimmed.toLowerCase() === "unknown"
       )
-        return;
+        return "Unattributed";
+      if (trimmed.includes("/")) {
+        return trimmed
+          .split("/")
+          .map((part) => {
+            const p = part.trim();
+            return p.charAt(0).toUpperCase() + p.slice(1);
+          })
+          .join(" / ");
+      }
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+    };
 
+    const getOrCreateOp = (rawName) => {
+      const normName = normalizeOpName(rawName);
+      const existingKey = Object.keys(byName).find(
+        (k) => k.toLowerCase() === normName.toLowerCase(),
+      );
+      const targetKey = existingKey || normName;
+      if (!byName[targetKey]) {
+        byName[targetKey] = {
+          name: targetKey,
+          total: 0,
+          breakdown: {},
+          cuts: 0,
+          hoursLost: 0,
+          shiftCounts: { Day: 0, Night: 0 },
+        };
+      }
+      return byName[targetKey];
+    };
+
+    // Find weeks matching current filteredDays
+    const matchingWeeks = weeklyData.filter((w) => {
+      if (!w.week) return false;
       const weekParts = w.week.split("-").map(Number);
-      if (weekParts.length !== 3) return;
+      if (weekParts.length !== 3) return false;
       const weekStart = new Date(weekParts[0], weekParts[1] - 1, weekParts[2]);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 6);
-
-      const matchesFilter = filteredDays.some(
+      return filteredDays.some(
         (d) => d.dateObj >= weekStart && d.dateObj <= weekEnd,
       );
-      if (matchesFilter) {
-        hasExactAPICuts = true;
-        w.operatorCuts.forEach((oc) => {
-          if (!oc.name) return;
-          const normName =
-            oc.name.trim().charAt(0).toUpperCase() + oc.name.trim().slice(1);
-          let targetKey =
-            Object.keys(byName).find(
-              (k) => k.toLowerCase() === normName.toLowerCase(),
-            ) || normName;
-          if (!byName[targetKey]) {
-            byName[targetKey] = {
-              name: targetKey,
-              total: 0,
-              breakdown: {},
-              cuts: 0,
-              hoursLost: 0,
-              shiftCounts: { Day: 0, Night: 0 },
-            };
-          }
-          byName[targetKey].cuts += oc.cuts || 0;
-        });
-      }
     });
 
-    if (!hasExactAPICuts) {
+    const hasOperatorMatrix = matchingWeeks.some(
+      (w) => Array.isArray(w.operatorMatrix) && w.operatorMatrix.length > 0,
+    );
+
+    if (hasOperatorMatrix) {
+      // Use exact individual operator data provided by API in operatorMatrix
+      matchingWeeks.forEach((w) => {
+        (w.operatorMatrix || []).forEach((op) => {
+          if (!op.name) return;
+          const entry = getOrCreateOp(op.name);
+
+          // 1. Process exact hours lost per issue
+          if (op.hoursLostByIssue && typeof op.hoursLostByIssue === "object") {
+            Object.entries(op.hoursLostByIssue).forEach(([issueName, hrs]) => {
+              if (
+                !issueName ||
+                isExcludedOverviewIssue(issueName) ||
+                isUnattributedIssue(issueName)
+              )
+                return;
+              entry.hoursLost += Number(hrs) || 0;
+            });
+          } else if (typeof op.hoursLost === "number" && op.hoursLost > 0) {
+            entry.hoursLost += op.hoursLost;
+          }
+
+          // 2. Process occurrences breakdown
+          if (op.breakdown && typeof op.breakdown === "object") {
+            Object.entries(op.breakdown).forEach(([issueName, count]) => {
+              if (
+                !issueName ||
+                isExcludedOverviewIssue(issueName) ||
+                isUnattributedIssue(issueName)
+              )
+                return;
+              const c = Number(count) || 0;
+              entry.breakdown[issueName] =
+                (entry.breakdown[issueName] || 0) + c;
+              entry.total += c;
+            });
+          }
+
+          // 3. Shifts from operatorMatrix
+          if (Array.isArray(op.shifts)) {
+            op.shifts.forEach((s) => {
+              if (!s) return;
+              const str = String(s).trim();
+              const normalized =
+                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+              if (normalized === "Day" || normalized === "Night") {
+                entry.shiftCounts[normalized] =
+                  (entry.shiftCounts[normalized] || 0) + 1;
+              }
+            });
+          }
+        });
+
+        // 4. Cuts from operatorCuts
+        if (Array.isArray(w.operatorCuts)) {
+          w.operatorCuts.forEach((oc) => {
+            if (!oc.name) return;
+            const entry = getOrCreateOp(oc.name);
+            entry.cuts += oc.cuts || 0;
+          });
+        }
+      });
+
+      // 5. Supplement shifts from daily breakdown in case op.shifts was unpopulated in historical records
+      filteredDays.forEach((day) => {
+        (day.issues || []).forEach((issue) => {
+          let rawShifts = [];
+          if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
+            rawShifts = issue.shifts;
+          } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
+            rawShifts = [issue.shifts.trim()];
+          } else if (typeof issue.shift === "string" && issue.shift.trim()) {
+            rawShifts = [issue.shift.trim()];
+          } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
+            rawShifts = issue.shift;
+          }
+
+          const rawOperators =
+            issue.operators && issue.operators.length > 0
+              ? issue.operators
+              : [];
+
+          rawOperators.forEach((opName, opIdx) => {
+            if (!opName) return;
+            const entry = getOrCreateOp(opName);
+            const opDetail =
+              issue.operatorDetails?.find(
+                (d) =>
+                  d.name?.trim().toLowerCase() === opName.trim().toLowerCase(),
+              ) || issue.operatorDetails?.[opIdx];
+
+            const opShifts =
+              opDetail &&
+              Array.isArray(opDetail.shifts) &&
+              opDetail.shifts.length > 0
+                ? opDetail.shifts
+                : rawShifts;
+
+            opShifts.forEach((s) => {
+              if (!s) return;
+              const str = String(s).trim();
+              const normalized =
+                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+              if (normalized === "Day" || normalized === "Night") {
+                entry.shiftCounts[normalized] =
+                  (entry.shiftCounts[normalized] || 0) + 1;
+              }
+            });
+          });
+        });
+      });
+    } else {
+      // Fallback: Legacy daily breakdown calculation
       filteredDays.forEach((day) => {
         (day.issues || []).forEach((issue) => {
           if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
-          const cuts = issue.cuts || 0;
           const occurrences = issue.occurrences || 0;
+          const hours = issue.productionHoursLost || 0;
+
+          let rawShifts = [];
+          if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
+            rawShifts = issue.shifts;
+          } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
+            rawShifts = [issue.shifts.trim()];
+          } else if (typeof issue.shift === "string" && issue.shift.trim()) {
+            rawShifts = [issue.shift.trim()];
+          } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
+            rawShifts = issue.shift;
+          }
+
           const rawOperators =
             issue.operators && issue.operators.length > 0
               ? issue.operators
               : ["Unattributed"];
-          const operators = rawOperators.map((name) => {
-            if (!name) return "Unattributed";
-            const trimmed = name.trim();
-            if (
-              trimmed.toLowerCase() === "uncommented" ||
-              trimmed.toLowerCase() === "unknown"
-            )
-              return "Unattributed";
-            if (trimmed.includes("/")) {
-              return trimmed
-                .split("/")
-                .map(
-                  (part) =>
-                    part.trim().charAt(0).toUpperCase() + part.trim().slice(1),
-                )
-                .join(" / ");
-            }
-            return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-          });
+
+          const operators = rawOperators.map(normalizeOpName);
 
           operators.forEach((opName, opIdx) => {
+            const entry = getOrCreateOp(opName);
             const originalOpName = rawOperators[opIdx] || opName;
             const opDetail =
               issue.operatorDetails?.find(
                 (d) =>
                   d.name?.trim().toLowerCase() === originalOpName.toLowerCase(),
               ) || issue.operatorDetails?.[opIdx];
+
+            const opShifts =
+              opDetail &&
+              Array.isArray(opDetail.shifts) &&
+              opDetail.shifts.length > 0
+                ? opDetail.shifts
+                : rawShifts;
+
             const opOccurrences =
               opDetail &&
               Array.isArray(opDetail.shifts) &&
               opDetail.shifts.length > 0
                 ? opDetail.shifts.length
                 : occurrences / operators.length;
+
+            entry.total += opOccurrences;
+            entry.breakdown[issue.name] =
+              (entry.breakdown[issue.name] || 0) + opOccurrences;
+
             const proportion =
               occurrences > 0
                 ? opOccurrences / occurrences
                 : 1 / operators.length;
-            if (byName[opName]) {
-              byName[opName].cuts += cuts * proportion;
-            }
+
+            const actualOpHours =
+              typeof opDetail?.productionHoursLost === "number"
+                ? opDetail.productionHoursLost
+                : typeof opDetail?.hoursLost === "number"
+                ? opDetail.hoursLost
+                : typeof opDetail?.hours === "number"
+                ? opDetail.hours
+                : hours * proportion;
+
+            entry.hoursLost += actualOpHours;
+
+            opShifts.forEach((s) => {
+              if (!s) return;
+              const str = String(s).trim();
+              const normalized =
+                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+              if (normalized === "Day" || normalized === "Night") {
+                entry.shiftCounts[normalized] =
+                  (entry.shiftCounts[normalized] || 0) + 1;
+              }
+            });
           });
         });
       });
+
+      let hasExactAPICuts = false;
+      matchingWeeks.forEach((w) => {
+        if (Array.isArray(w.operatorCuts) && w.operatorCuts.length > 0) {
+          hasExactAPICuts = true;
+          w.operatorCuts.forEach((oc) => {
+            if (!oc.name) return;
+            const entry = getOrCreateOp(oc.name);
+            entry.cuts += oc.cuts || 0;
+          });
+        }
+      });
+
+      if (!hasExactAPICuts) {
+        filteredDays.forEach((day) => {
+          (day.issues || []).forEach((issue) => {
+            if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
+            const cuts = issue.cuts || 0;
+            const occurrences = issue.occurrences || 0;
+            const rawOperators =
+              issue.operators && issue.operators.length > 0
+                ? issue.operators
+                : ["Unattributed"];
+            const operators = rawOperators.map(normalizeOpName);
+
+            operators.forEach((opName, opIdx) => {
+              const entry = getOrCreateOp(opName);
+              const originalOpName = rawOperators[opIdx] || opName;
+              const opDetail =
+                issue.operatorDetails?.find(
+                  (d) =>
+                    d.name?.trim().toLowerCase() === originalOpName.toLowerCase(),
+                ) || issue.operatorDetails?.[opIdx];
+              const opOccurrences =
+                opDetail &&
+                Array.isArray(opDetail.shifts) &&
+                opDetail.shifts.length > 0
+                  ? opDetail.shifts.length
+                  : occurrences / operators.length;
+              const proportion =
+                occurrences > 0
+                  ? opOccurrences / occurrences
+                  : 1 / operators.length;
+              entry.cuts += cuts * proportion;
+            });
+          });
+        });
+      }
     }
 
     Object.values(byName).forEach((op) => {
