@@ -94,6 +94,7 @@ export const isUnattributedIssue = (name) => !!name && name.startsWith("Unattrib
 export const EXCLUDED_OVERVIEW_ISSUES = [
   "Scheduled Holds (Dross/Maintenance)",
   "Scheduled Holds",
+  "Scheduled Hold",
   "Mechanical (Cuppling/Share Pin)",
   "Coiler Change",
   "Ingot unavailable",
@@ -109,6 +110,160 @@ export const isExcludedOverviewIssue = (name) => {
     (item) => item.trim().toLowerCase() === clean,
   );
 };
+
+// Check if an issue represents Scheduled Holds / Dross / Maintenance
+export const isScheduledHoldsIssue = (name) => {
+  if (!name || typeof name !== "string") return false;
+  const clean = name.trim().toLowerCase();
+  return (
+    clean.startsWith("scheduled hold") ||
+    clean.includes("dross") ||
+    clean.includes("maintenance") ||
+    clean === "scheduled holds (dross/maintenance)"
+  );
+};
+
+// Helper to extract secondary issue name and secondary hours lost from an issue
+export const getSecondaryIssueInfo = (issue) => {
+  if (!issue || typeof issue !== "object") {
+    return { name: "", hoursLost: 0, items: [], netHoursLost: 0, operators: [], shifts: [] };
+  }
+
+  const defaultOperators = Array.isArray(issue.operators)
+    ? issue.operators
+    : issue.operator
+    ? [issue.operator]
+    : [];
+
+  const defaultShifts = Array.isArray(issue.shifts)
+    ? issue.shifts
+    : issue.shift
+    ? [issue.shift]
+    : [];
+
+  let items = [];
+  if (Array.isArray(issue.secondaryIssues) && issue.secondaryIssues.length > 0) {
+    items = issue.secondaryIssues.map((item) => {
+      const itemOps = Array.isArray(item.operators)
+        ? item.operators
+        : item.operator
+        ? [item.operator]
+        : defaultOperators;
+      const itemShifts = Array.isArray(item.shifts)
+        ? item.shifts
+        : item.shift
+        ? [item.shift]
+        : defaultShifts;
+      return {
+        name: item.name || item.issue || "",
+        hours:
+          Number(item.hours ?? item.secondaryHoursLost ?? item.hoursLost ?? 0) ||
+          0,
+        occurrences: item.occurrences ?? item.occurrence ?? 1,
+        cuts: item.cuts ?? item.cut ?? 0,
+        operators: itemOps,
+        shifts: itemShifts,
+      };
+    });
+  }
+
+  const explicitName =
+    issue.secondaryIssueFaced ||
+    issue["Secondary Issue_Faced"] ||
+    issue["Seconday Issue_Faced"] ||
+    issue.secondaryIssue ||
+    issue.secondary_issue_faced ||
+    issue.secondary_issue ||
+    "";
+
+  const name =
+    explicitName.trim() ||
+    items
+      .map((i) => i.name)
+      .filter(Boolean)
+      .join(", ");
+
+  const rawHrs =
+    issue.secondaryHoursLost ??
+    issue.secondaryProductionHoursLost ??
+    issue["Secondary production_hr_lost"] ??
+    issue["secondary_production_hr_lost"] ??
+    issue.secondaryHours ??
+    (items.length > 0 ? items.reduce((sum, i) => sum + i.hours, 0) : 0);
+
+  const hoursLost = Number(rawHrs) || 0;
+  const netHoursLost =
+    issue.netProductionHoursLost !== undefined
+      ? Number(issue.netProductionHoursLost) || 0
+      : Math.max(0, (issue.productionHoursLost || 0) - hoursLost);
+
+  const allItemOps =
+    items.length > 0
+      ? [...new Set(items.flatMap((i) => i.operators || []))]
+      : [];
+  const allItemShifts =
+    items.length > 0 ? [...new Set(items.flatMap((i) => i.shifts || []))] : [];
+
+  return {
+    name: String(name).trim(),
+    hoursLost: Number(hoursLost.toFixed(2)),
+    items,
+    netHoursLost: Number(netHoursLost.toFixed(2)),
+    operators: allItemOps.length > 0 ? allItemOps : defaultOperators,
+    shifts: allItemShifts.length > 0 ? allItemShifts : defaultShifts,
+  };
+};
+
+// Helper to extract secondary issue name and secondary hours lost from a day
+export const getDaySecondaryInfo = (day) => {
+  if (!day || typeof day !== "object") {
+    return { name: "", hoursLost: 0, items: [] };
+  }
+
+  let items = [];
+  if (Array.isArray(day.secondaryIssues) && day.secondaryIssues.length > 0) {
+    items = day.secondaryIssues.map((item) => ({
+      name: item.name || item.issue || "",
+      hours:
+        Number(item.secondaryHoursLost ?? item.hours ?? item.hoursLost ?? 0) ||
+        0,
+      occurrences: item.occurrences || 1,
+      operators: item.operators || [],
+      shifts: item.shifts || [],
+      subtractedFrom: item.subtractedFrom || [],
+    }));
+  }
+
+  const explicitName =
+    day.secondaryIssueFaced ||
+    day["Secondary Issue_Faced"] ||
+    day["Seconday Issue_Faced"] ||
+    day.secondary_issue_faced ||
+    "";
+
+  const name =
+    explicitName.trim() ||
+    items
+      .map((i) => i.name)
+      .filter(Boolean)
+      .join(", ");
+
+  const rawHrs =
+    day.secondaryHoursLost ??
+    day.secondaryProductionHoursLost ??
+    day["Secondary production_hr_lost"] ??
+    day["secondary_production_hr_lost"] ??
+    (items.length > 0 ? items.reduce((sum, i) => sum + i.hours, 0) : 0);
+
+  const hoursLost = Number(rawHrs) || 0;
+
+  return {
+    name: String(name).trim(),
+    hoursLost: Number(hoursLost.toFixed(2)),
+    items,
+  };
+};
+
 
 // Helper to get the Monday of the current week in YYYY-MM-DD format
 export const getMondayOfCurrentWeek = () => {
@@ -318,6 +473,27 @@ export const normalizeAllDailyData = (weeklyData) => {
         dateLabel,
         dateLabelAlt,
         productionHoursLost: record?.productionHoursLost ?? 0,
+        secondaryProductionHoursLost: Number(
+          record?.secondaryProductionHoursLost ??
+            record?.["Secondary production_hr_lost"] ??
+            record?.["secondary_production_hr_lost"] ??
+            record?.secondaryHoursLost ??
+            0,
+        ) || 0,
+        secondaryHoursLost: Number(
+          record?.secondaryHoursLost ??
+            record?.secondaryProductionHoursLost ??
+            record?.["Secondary production_hr_lost"] ??
+            0,
+        ) || 0,
+        secondaryIssueFaced:
+          record?.secondaryIssueFaced ??
+          record?.["Secondary Issue_Faced"] ??
+          record?.["Seconday Issue_Faced"] ??
+          record?.secondary_issue_faced ??
+          record?.secondaryIssue ??
+          "",
+        secondaryIssues: record?.secondaryIssues || [],
         issues: record?.issues ?? [],
       });
     }

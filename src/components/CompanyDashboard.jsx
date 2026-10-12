@@ -16,7 +16,7 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import {
   formatTime,
   formatWeekDate,
@@ -25,6 +25,9 @@ import {
   getCleanMainIssue,
   isUnattributedIssue,
   isExcludedOverviewIssue,
+  isScheduledHoldsIssue,
+  getSecondaryIssueInfo,
+  getDaySecondaryInfo,
   getMondayOfCurrentWeek,
   getCurrentMonthKey,
   formatMonthLabel,
@@ -273,6 +276,65 @@ export default function CompanyDashboard({
       (sum, d) => sum + (d.productionHoursLost || 0),
       0,
     );
+  }, [filteredDays]);
+
+  // Total hours lost and occurrences for Scheduled Holds (Dross/Maintenance) in range
+  const scheduledHoldsStats = useMemo(() => {
+    let totalHours = 0;
+    let totalOccurrences = 0;
+
+    filteredDays.forEach((day) => {
+      // 1. Standalone direct issues
+      (day.issues || []).forEach((issue) => {
+        if (isScheduledHoldsIssue(issue.name)) {
+          totalHours += issue.productionHoursLost || 0;
+          totalOccurrences += issue.occurrences || 1;
+        }
+      });
+
+      // 2. Secondary issues (check issue-level first)
+      let countedSecondaryOnDay = false;
+      (day.issues || []).forEach((issue) => {
+        const secInfo = getSecondaryIssueInfo(issue);
+        if (secInfo.items && secInfo.items.length > 0) {
+          secInfo.items.forEach((item) => {
+            if (isScheduledHoldsIssue(item.name)) {
+              totalHours += item.hours || 0;
+              totalOccurrences += 1;
+              countedSecondaryOnDay = true;
+            }
+          });
+        } else if (
+          isScheduledHoldsIssue(secInfo.name) &&
+          secInfo.hoursLost > 0
+        ) {
+          totalHours += secInfo.hoursLost;
+          totalOccurrences += 1;
+          countedSecondaryOnDay = true;
+        }
+      });
+
+      // 3. Fallback: if no issue-level secondary holds were recorded, check day-level secondaryIssues
+      if (!countedSecondaryOnDay) {
+        const daySec = getDaySecondaryInfo(day);
+        if (daySec.items && daySec.items.length > 0) {
+          daySec.items.forEach((item) => {
+            if (isScheduledHoldsIssue(item.name)) {
+              totalHours += item.hours || 0;
+              totalOccurrences += item.occurrences || 1;
+            }
+          });
+        } else if (isScheduledHoldsIssue(daySec.name) && daySec.hoursLost > 0) {
+          totalHours += daySec.hoursLost;
+          totalOccurrences += 1;
+        }
+      }
+    });
+
+    return {
+      totalHours: Number(totalHours.toFixed(2)),
+      totalOccurrences,
+    };
   }, [filteredDays]);
 
   // Total cuts in range (from weeklyData.totalCuts or operatorRows)
@@ -571,10 +633,10 @@ export default function CompanyDashboard({
               typeof opDetail?.productionHoursLost === "number"
                 ? opDetail.productionHoursLost
                 : typeof opDetail?.hoursLost === "number"
-                ? opDetail.hoursLost
-                : typeof opDetail?.hours === "number"
-                ? opDetail.hours
-                : hours * proportion;
+                  ? opDetail.hoursLost
+                  : typeof opDetail?.hours === "number"
+                    ? opDetail.hours
+                    : hours * proportion;
 
             entry.hoursLost += actualOpHours;
 
@@ -622,7 +684,8 @@ export default function CompanyDashboard({
               const opDetail =
                 issue.operatorDetails?.find(
                   (d) =>
-                    d.name?.trim().toLowerCase() === originalOpName.toLowerCase(),
+                    d.name?.trim().toLowerCase() ===
+                    originalOpName.toLowerCase(),
                 ) || issue.operatorDetails?.[opIdx];
               const opOccurrences =
                 opDetail &&
@@ -932,7 +995,7 @@ export default function CompanyDashboard({
           )}
 
           {/* CARDS SECTION */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-gray-800">
@@ -946,6 +1009,32 @@ export default function CompanyDashboard({
                 <p className="text-xl font-black text-gray-900">
                   {formatTime(totalProductionHoursLost)}
                 </p>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-gray-800">
+                  Scheduled Holds (Dross/Maint.)
+                </span>
+                <div className="bg-orange-50 p-2 rounded-lg">
+                  <CirclePause className="text-orange-500 size-6" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <p className="text-xl font-black text-gray-900">
+                  {formatTime(scheduledHoldsStats.totalHours)}
+                </p>
+                {scheduledHoldsStats.totalOccurrences > 0 ? (
+                  <span className="text-xs text-orange-600 font-bold">
+                    {scheduledHoldsStats.totalOccurrences}{" "}
+                    {scheduledHoldsStats.totalOccurrences === 1
+                      ? "incident"
+                      : "incidents"}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400">0 incidents</span>
+                )}
               </div>
             </div>
 
@@ -1106,6 +1195,7 @@ export default function CompanyDashboard({
                         (sum, i) => sum + i.occurrences,
                         0,
                       );
+                      const daySec = getDaySecondaryInfo(day);
 
                       return (
                         <div key={day.dateStr} className="group flex flex-col">
@@ -1147,7 +1237,18 @@ export default function CompanyDashboard({
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-4 sm:gap-8">
+                            <div className="flex items-center gap-3 sm:gap-6">
+                              {/* {daySec.hoursLost > 0 && (
+                                <span
+                                  className="hidden md:inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-md text-xs bg-amber-50 text-amber-900 border border-amber-200"
+                                  title={`Secondary hr lost: ${formatTime(daySec.hoursLost)}`}
+                                >
+                                  <CirclePause className="size-3 text-amber-600 shrink-0" />
+                                  <span>
+                                    Sec: {formatTime(daySec.hoursLost)}
+                                  </span>
+                                </span>
+                              )} */}
                               {hasIssues ? (
                                 <span
                                   className={`hidden sm:inline-flex items-center justify-center font-semibold px-2.5 py-1 rounded-full text-xs ${isHighestDay ? "bg-amber-200/80 text-amber-900" : "bg-blue-50 text-blue-700"}`}
@@ -1171,7 +1272,7 @@ export default function CompanyDashboard({
                           <div
                             className={`transition-all duration-300 ease-in-out overflow-hidden bg-gray-50/50 ${
                               isExpanded
-                                ? "max-h-250 opacity-100 border-b border-gray-100"
+                                ? "max-h-350 opacity-100 border-b border-gray-100"
                                 : "max-h-0 opacity-0 pointer-events-none"
                             }`}
                           >
@@ -1202,58 +1303,149 @@ export default function CompanyDashboard({
                                     const unattributed = isUnattributedIssue(
                                       issue.name,
                                     );
+                                    const secInfo =
+                                      getSecondaryIssueInfo(issue);
                                     return (
-                                      <tr
-                                        key={idx}
-                                        className="hover:bg-gray-50/70 transition-colors"
-                                      >
-                                        <td className="px-5 py-3.5">
-                                          <div className="flex items-center gap-2.5">
-                                            {unattributed ? (
-                                              <TriangleAlert className="size-4 text-amber-500 shrink-0" />
-                                            ) : (
-                                              <CirclePause className="size-4 text-gray-400 shrink-0" />
-                                            )}
-                                            <span
-                                              className={`font-semibold text-sm ${unattributed ? "text-amber-700 italic" : "text-gray-800"}`}
-                                            >
-                                              {issue.name}
-                                            </span>
-                                          </div>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-center">
-                                          <span className="inline-flex items-center justify-center bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">
-                                            {issue.occurrences}x
-                                          </span>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                          <div className="flex flex-wrap gap-1.5">
-                                            {!issue.operators ||
-                                            issue.operators.length === 0 ? (
-                                              <span className="text-gray-400 text-xs italic">
-                                                Unknown
+                                      <Fragment key={`issue-group-${idx}`}>
+                                        {/* Primary Issue Row */}
+                                        <tr className="hover:bg-gray-50/70 transition-colors">
+                                          <td className="px-5 py-3.5">
+                                            <div className="flex items-center gap-2.5">
+                                              {unattributed ? (
+                                                <TriangleAlert className="size-4 text-amber-500 shrink-0" />
+                                              ) : (
+                                                <CirclePause className="size-4 text-gray-400 shrink-0" />
+                                              )}
+                                              <span
+                                                className={`font-semibold text-sm ${unattributed ? "text-amber-700 italic" : "text-gray-800"}`}
+                                              >
+                                                {issue.name}
                                               </span>
-                                            ) : (
-                                              issue.operators.map((op) => (
-                                                <span
-                                                  key={op}
-                                                  className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-xs font-semibold"
-                                                >
-                                                  {op}
+                                            </div>
+                                          </td>
+                                          <td className="px-5 py-3.5 text-center">
+                                            <span className="inline-flex items-center justify-center bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">
+                                              {issue.occurrences}x
+                                            </span>
+                                          </td>
+                                          <td className="px-5 py-3.5">
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {!issue.operators ||
+                                              issue.operators.length === 0 ? (
+                                                <span className="text-gray-400 text-xs italic">
+                                                  Unknown
                                                 </span>
-                                              ))
+                                              ) : (
+                                                issue.operators.map((op) => (
+                                                  <span
+                                                    key={op}
+                                                    className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-xs font-semibold"
+                                                  >
+                                                    {op}
+                                                  </span>
+                                                ))
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="px-5 py-3.5 text-right font-bold text-gray-700">
+                                            {issue.cuts || 0}
+                                          </td>
+                                          <td className="px-5 py-3.5 text-right font-bold text-gray-700">
+                                            <div className="flex flex-col items-end">
+                                              <span>
+                                                {formatTime(
+                                                  secInfo.hoursLost > 0
+                                                    ? secInfo.netHoursLost
+                                                    : issue.productionHoursLost,
+                                                )}
+                                              </span>
+                                            </div>
+                                          </td>
+                                        </tr>
+
+                                        {/* Secondary Issue Row(s) */}
+                                        {secInfo.items &&
+                                        secInfo.items.length > 0
+                                          ? secInfo.items.map((item, sIdx) => (
+                                              <tr
+                                                key={`sec-${idx}-${sIdx}`}
+                                                className="bg-amber-50/70 border-y border-amber-100/80 hover:bg-amber-100/60 transition-colors"
+                                              >
+                                                <td className="px-5 py-3.5 pl-8 sm:pl-10">
+                                                  <div className="flex items-center gap-2 flex-wrap">
+                                                    <CirclePause className="size-4 text-amber-600 shrink-0" />
+                                                    <span className="text-[10px] uppercase font-bold text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded tracking-wider shrink-0">
+                                                      Secondary Issue Faced:
+                                                    </span>
+                                                    <span className="font-semibold text-sm text-gray-900">
+                                                      {item.name}
+                                                    </span>
+                                                  </div>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-center">
+                                                  <span className="inline-flex items-center justify-center bg-amber-100 text-amber-800 px-2 py-1 rounded text-xs font-bold">
+                                                    {item.occurrences
+                                                      ? `${item.occurrences}x`
+                                                      : "-"}
+                                                  </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-gray-400 text-xs italic">
+                                                  -
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right font-bold text-gray-400">
+                                                  {item.cuts || 0}
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right font-bold text-amber-900">
+                                                  <div className="flex flex-col items-end">
+                                                    <span className="text-red-700 font-bold">
+                                                      {formatTime(item.hours)}
+                                                    </span>
+                                                  </div>
+                                                </td>
+                                              </tr>
+                                            ))
+                                          : (secInfo.name ||
+                                              secInfo.hoursLost > 0) && (
+                                              <tr
+                                                key={`sec-${idx}-fallback`}
+                                                className="bg-amber-50/70 border-y border-amber-100/80 hover:bg-amber-100/60 transition-colors"
+                                              >
+                                                <td className="px-5 py-3.5 pl-8 sm:pl-10">
+                                                  <div className="flex items-center gap-2 flex-wrap">
+                                                    <CirclePause className="size-4 text-amber-600 shrink-0" />
+                                                    <span className="text-[10px] uppercase font-bold text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded tracking-wider shrink-0">
+                                                      Secondary Issue Faced:
+                                                    </span>
+                                                    {secInfo.name && (
+                                                      <span className="font-semibold text-sm text-gray-900">
+                                                        {secInfo.name}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-center">
+                                                  <span className="inline-flex items-center justify-center bg-amber-100 text-amber-800 px-2 py-1 rounded text-xs font-bold">
+                                                    -
+                                                  </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-gray-400 text-xs italic">
+                                                  -
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right font-bold text-gray-400">
+                                                  0
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right font-bold text-amber-900">
+                                                  <div className="flex flex-col items-end">
+                                                    <span className="text-red-700 font-bold">
+                                                      {formatTime(
+                                                        secInfo.hoursLost,
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                </td>
+                                              </tr>
                                             )}
-                                          </div>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-right font-bold text-gray-700">
-                                          {issue.cuts || 0}
-                                        </td>
-                                        <td className="px-5 py-3.5 text-right font-bold text-gray-700">
-                                          {formatTime(
-                                            issue.productionHoursLost,
-                                          )}
-                                        </td>
-                                      </tr>
+                                      </Fragment>
                                     );
                                   })}
                                 </tbody>
