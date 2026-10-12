@@ -2,6 +2,7 @@
 import {
   CirclePause,
   ClockFading,
+  ClockAlert,
   Scissors,
   TriangleAlert,
   User2,
@@ -336,6 +337,13 @@ export default function CompanyDashboard({
       totalOccurrences,
     };
   }, [filteredDays]);
+
+  // Net Unscheduled hours lost (Total Hours Lost minus Scheduled Holds)
+  const unscheduledHoursLost = useMemo(() => {
+    const totalLost = totalProductionHoursLost || 0;
+    const scheduledHours = scheduledHoldsStats.totalHours || 0;
+    return Math.max(0, Number((totalLost - scheduledHours).toFixed(2)));
+  }, [totalProductionHoursLost, scheduledHoldsStats.totalHours]);
 
   // Total cuts in range (from weeklyData.totalCuts or operatorRows)
   const totalCuts = useMemo(() => {
@@ -733,8 +741,35 @@ export default function CompanyDashboard({
     return operatorRows;
   }, [operatorRows, selectedShiftTab]);
 
-  const topOperator =
-    operatorRows.length > 0 ? operatorRows[0] : { name: "None", total: 0 };
+  // Operator with maximum incidents in range
+  const operatorWithMaxIncidents = useMemo(() => {
+    if (!operatorRows || operatorRows.length === 0) {
+      return { name: "None", total: 0 };
+    }
+    // Prefer named operators if available, otherwise fallback to any operator with incidents
+    const namedOperators = operatorRows.filter(
+      (op) =>
+        op.name &&
+        op.name.toLowerCase() !== "unattributed" &&
+        (op.total || 0) > 0,
+    );
+    const pool =
+      namedOperators.length > 0
+        ? namedOperators
+        : operatorRows.filter((op) => (op.total || 0) > 0);
+
+    if (pool.length === 0) {
+      return { name: "None", total: 0 };
+    }
+
+    return [...pool].sort(
+      (a, b) =>
+        (b.total || 0) - (a.total || 0) ||
+        (b.hoursLost || 0) - (a.hoursLost || 0),
+    )[0];
+  }, [operatorRows]);
+
+  const topOperator = operatorWithMaxIncidents;
 
   const mostFrequentIncident = useMemo(() => {
     let maxTotal = 0;
@@ -994,150 +1029,192 @@ export default function CompanyDashboard({
             </div>
           )}
 
-          {/* CARDS SECTION */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Total Hours Lost
-                </span>
-                <div className="bg-red-50 p-2 rounded-lg">
-                  <ClockFading className="text-red-500 size-6" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="text-xl font-black text-gray-900">
-                  {formatTime(totalProductionHoursLost)}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Scheduled Holds (Dross/Maint.)
-                </span>
-                <div className="bg-orange-50 p-2 rounded-lg">
-                  <CirclePause className="text-orange-500 size-6" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="text-xl font-black text-gray-900">
-                  {formatTime(scheduledHoldsStats.totalHours)}
-                </p>
-                {scheduledHoldsStats.totalOccurrences > 0 ? (
-                  <span className="text-xs text-orange-600 font-bold">
-                    {scheduledHoldsStats.totalOccurrences}{" "}
-                    {scheduledHoldsStats.totalOccurrences === 1
-                      ? "incident"
-                      : "incidents"}
+          {/* CARDS SECTION (DIVIDED INTO TWO BALANCED ROWS) */}
+          <section className="space-y-3.5">
+            {/* ROW 1: DOWNTIME & HOURS LOST (3 CARDS) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Total Hours Lost
                   </span>
-                ) : (
-                  <span className="text-xs text-gray-400">0 incidents</span>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Top Loss Incident
-                </span>
-                <div className="bg-amber-50 p-2 rounded-lg">
-                  <TriangleAlert className="text-amber-500 size-6" />
+                  <div className="bg-red-50 p-2 rounded-lg">
+                    <ClockFading className="text-red-500 size-6" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4">
-                <p
-                  className="text-xl font-bold text-gray-900 truncate"
-                  title={topFault.name}
-                >
-                  {topFault.name !== "None" ? topFault.name : "No faults"}
-                </p>
-                {topFault.name !== "None" ? (
-                  <span className="text-xs text-red-500 font-bold">
-                    {formatTime(topFault.hours)} lost
-                  </span>
-                ) : (
-                  <span className="text-xs text-gray-400">
-                    No recorded incidents
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Top Operator
-                </span>
-                <div className="bg-purple-50 p-2 rounded-lg">
-                  <User2 className="text-purple-500 size-6" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="text-xl font-black text-gray-900">
-                  {topOperator.name !== "None" ? topOperator.name : "N/A"}
-                </p>
-                {topOperator.name !== "None" && (
-                  <span className="text-xs text-purple-600 font-bold">
-                    {topOperator.total}{" "}
-                    {topOperator.total === 1 ? "incident" : "incidents"}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Most Frequent Issue
-                </span>
-                <div className="bg-blue-50 p-2 rounded-lg">
-                  <Activity className="text-red-500 size-6" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <p
-                  className="text-xl font-bold text-gray-900 truncate"
-                  title={
-                    mostFrequentIncident.name !== "None"
-                      ? mostFrequentIncident.name
-                      : "No incidents"
-                  }
-                >
-                  {mostFrequentIncident.name !== "None"
-                    ? getCleanMainIssue(mostFrequentIncident.name)
-                    : "No incidents"}
-                </p>
-                {mostFrequentIncident.name !== "None" ? (
+                <div className="mt-4">
+                  <p className="text-xl font-black text-gray-900">
+                    {formatTime(totalProductionHoursLost)}
+                  </p>
                   <span className="text-xs text-red-600 font-bold">
-                    {mostFrequentIncident.total}{" "}
-                    {mostFrequentIncident.total === 1
-                      ? "incident"
-                      : "incidents"}
+                    Gross downtime
                   </span>
-                ) : (
-                  <span className="text-xs text-gray-400">
-                    No recorded incidents
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Scheduled Holds (Dross/Maint.)
                   </span>
-                )}
+                  <div className="bg-orange-50 p-2 rounded-lg">
+                    <CirclePause className="text-orange-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xl font-black text-gray-900">
+                    {formatTime(scheduledHoldsStats.totalHours)}
+                  </p>
+                  {scheduledHoldsStats.totalOccurrences > 0 ? (
+                    <span className="text-xs text-orange-600 font-bold">
+                      {scheduledHoldsStats.totalOccurrences}{" "}
+                      {scheduledHoldsStats.totalOccurrences === 1
+                        ? "incident"
+                        : "incidents"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">0 incidents</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Hours Lost Due To Faults
+                  </span>
+                  <div className="bg-rose-50 p-2 rounded-lg">
+                    <ClockAlert className="text-rose-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xl font-black text-gray-900">
+                    {formatTime(unscheduledHoursLost)}
+                  </p>
+                  <span className="text-xs text-rose-500 font-bold">
+                    Excl. scheduled holds
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-gray-800">
-                  Cuts In Range
-                </span>
-                <div className="bg-emerald-50 p-2 rounded-lg">
-                  <Scissors className="text-emerald-500 size-6" />
+            {/* ROW 2: OPERATIONAL & INCIDENT DRIVERS (4 CARDS) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Top Loss Incident
+                  </span>
+                  <div className="bg-amber-50 p-2 rounded-lg">
+                    <TriangleAlert className="text-amber-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p
+                    className="text-xl font-bold text-gray-900 truncate"
+                    title={topFault.name}
+                  >
+                    {topFault.name !== "None" ? topFault.name : "No faults"}
+                  </p>
+                  {topFault.name !== "None" ? (
+                    <span className="text-xs text-red-500 font-bold">
+                      {formatTime(topFault.hours)} lost
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">
+                      No recorded incidents
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="mt-4">
-                <p className="text-xl font-black tracking-tight text-gray-900">
-                  {totalCuts} {totalCuts === 1 ? "cut" : "cuts"}
-                </p>
+
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Operator (Max Incidents)
+                  </span>
+                  <div className="bg-purple-50 p-2 rounded-lg">
+                    <User2 className="text-purple-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p
+                    className="text-xl font-black text-gray-900 truncate"
+                    title={
+                      operatorWithMaxIncidents.name !== "None"
+                        ? operatorWithMaxIncidents.name
+                        : "No incidents"
+                    }
+                  >
+                    {operatorWithMaxIncidents.name !== "None"
+                      ? operatorWithMaxIncidents.name
+                      : "No incidents"}
+                  </p>
+                  {operatorWithMaxIncidents.name !== "None" &&
+                  operatorWithMaxIncidents.total > 0 ? (
+                    <span className="text-xs text-purple-600 font-bold">
+                      {operatorWithMaxIncidents.total}{" "}
+                      {operatorWithMaxIncidents.total === 1
+                        ? "incident"
+                        : "incidents"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">0 incidents</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Most Frequent Issue
+                  </span>
+                  <div className="bg-blue-50 p-2 rounded-lg">
+                    <Activity className="text-blue-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p
+                    className="text-xl font-bold text-gray-900 truncate"
+                    title={
+                      mostFrequentIncident.name !== "None"
+                        ? mostFrequentIncident.name
+                        : "No incidents"
+                    }
+                  >
+                    {mostFrequentIncident.name !== "None"
+                      ? getCleanMainIssue(mostFrequentIncident.name)
+                      : "No incidents"}
+                  </p>
+                  {mostFrequentIncident.name !== "None" ? (
+                    <span className="text-xs text-blue-600 font-bold">
+                      {mostFrequentIncident.total}{" "}
+                      {mostFrequentIncident.total === 1
+                        ? "incident"
+                        : "incidents"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">
+                      No recorded incidents
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-800">
+                    Cuts In Range
+                  </span>
+                  <div className="bg-emerald-50 p-2 rounded-lg">
+                    <Scissors className="text-emerald-500 size-6" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xl font-black tracking-tight text-gray-900">
+                    {totalCuts} {totalCuts === 1 ? "cut" : "cuts"}
+                  </p>
+                </div>
               </div>
             </div>
           </section>
