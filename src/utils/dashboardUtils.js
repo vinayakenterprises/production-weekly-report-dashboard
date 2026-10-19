@@ -88,7 +88,8 @@ export const getCleanMainIssue = (fullName) => {
 
 // True for the synthetic bucket the API emits when Mill Daily Data reports
 // lost hours for a day but no logged row can be attributed to a cause.
-export const isUnattributedIssue = (name) => !!name && name.startsWith("Unattributed");
+export const isUnattributedIssue = (name) =>
+  !!name && name.startsWith("Unattributed");
 
 // Issues excluded from the Operator & Issues Overview table and overview metrics
 export const EXCLUDED_OVERVIEW_ISSUES = [
@@ -99,6 +100,7 @@ export const EXCLUDED_OVERVIEW_ISSUES = [
   "Coiler Change",
   "Ingot unavailable",
   "Ingot Unavailable",
+  "Space issue",
   "Other",
   "Others",
 ];
@@ -126,39 +128,50 @@ export const isScheduledHoldsIssue = (name) => {
 // Helper to extract secondary issue name and secondary hours lost from an issue
 export const getSecondaryIssueInfo = (issue) => {
   if (!issue || typeof issue !== "object") {
-    return { name: "", hoursLost: 0, items: [], netHoursLost: 0, operators: [], shifts: [] };
+    return {
+      name: "",
+      hoursLost: 0,
+      items: [],
+      netHoursLost: 0,
+      operators: [],
+      shifts: [],
+    };
   }
 
   const defaultOperators = Array.isArray(issue.operators)
     ? issue.operators
     : issue.operator
-    ? [issue.operator]
-    : [];
+      ? [issue.operator]
+      : [];
 
   const defaultShifts = Array.isArray(issue.shifts)
     ? issue.shifts
     : issue.shift
-    ? [issue.shift]
-    : [];
+      ? [issue.shift]
+      : [];
 
   let items = [];
-  if (Array.isArray(issue.secondaryIssues) && issue.secondaryIssues.length > 0) {
+  if (
+    Array.isArray(issue.secondaryIssues) &&
+    issue.secondaryIssues.length > 0
+  ) {
     items = issue.secondaryIssues.map((item) => {
       const itemOps = Array.isArray(item.operators)
         ? item.operators
         : item.operator
-        ? [item.operator]
-        : defaultOperators;
+          ? [item.operator]
+          : defaultOperators;
       const itemShifts = Array.isArray(item.shifts)
         ? item.shifts
         : item.shift
-        ? [item.shift]
-        : defaultShifts;
+          ? [item.shift]
+          : defaultShifts;
       return {
         name: item.name || item.issue || "",
         hours:
-          Number(item.hours ?? item.secondaryHoursLost ?? item.hoursLost ?? 0) ||
-          0,
+          Number(
+            item.hours ?? item.secondaryHoursLost ?? item.hoursLost ?? 0,
+          ) || 0,
         occurrences: item.occurrences ?? item.occurrence ?? 1,
         cuts: item.cuts ?? item.cut ?? 0,
         operators: itemOps,
@@ -263,7 +276,6 @@ export const getDaySecondaryInfo = (day) => {
     items,
   };
 };
-
 
 // Helper to get the Monday of the current week in YYYY-MM-DD format
 export const getMondayOfCurrentWeek = () => {
@@ -473,19 +485,21 @@ export const normalizeAllDailyData = (weeklyData) => {
         dateLabel,
         dateLabelAlt,
         productionHoursLost: record?.productionHoursLost ?? 0,
-        secondaryProductionHoursLost: Number(
-          record?.secondaryProductionHoursLost ??
-            record?.["Secondary production_hr_lost"] ??
-            record?.["secondary_production_hr_lost"] ??
-            record?.secondaryHoursLost ??
-            0,
-        ) || 0,
-        secondaryHoursLost: Number(
-          record?.secondaryHoursLost ??
+        secondaryProductionHoursLost:
+          Number(
             record?.secondaryProductionHoursLost ??
-            record?.["Secondary production_hr_lost"] ??
-            0,
-        ) || 0,
+              record?.["Secondary production_hr_lost"] ??
+              record?.["secondary_production_hr_lost"] ??
+              record?.secondaryHoursLost ??
+              0,
+          ) || 0,
+        secondaryHoursLost:
+          Number(
+            record?.secondaryHoursLost ??
+              record?.secondaryProductionHoursLost ??
+              record?.["Secondary production_hr_lost"] ??
+              0,
+          ) || 0,
         secondaryIssueFaced:
           record?.secondaryIssueFaced ??
           record?.["Secondary Issue_Faced"] ??
