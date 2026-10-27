@@ -1374,6 +1374,9 @@ export default function CompanyDashboard({
                                     <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right">
                                       TIME LOST
                                     </th>
+                                    <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs min-w-[240px]">
+                                      PC FOLLOW UP
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -1439,6 +1442,53 @@ export default function CompanyDashboard({
                                               </span>
                                             </div>
                                           </td>
+                                          <td className="px-5 py-3.5 min-w-[240px] max-w-sm sm:max-w-md whitespace-normal">
+                                            {(() => {
+                                              const rawFollowUp =
+                                                issue.pcFollowUp ||
+                                                issue.pc_follow_up ||
+                                                issue.pcFollowup ||
+                                                issue["PC Follow Up"] ||
+                                                "";
+                                              const followUpText =
+                                                typeof rawFollowUp === "string"
+                                                  ? rawFollowUp.trim()
+                                                  : "";
+                                              if (!followUpText) {
+                                                return (
+                                                  <span className="text-gray-400 text-xs italic">
+                                                    -
+                                                  </span>
+                                                );
+                                              }
+                                              const notes = followUpText.includes("|")
+                                                ? followUpText
+                                                    .split("|")
+                                                    .map((n) => n.trim())
+                                                    .filter(Boolean)
+                                                : [followUpText];
+
+                                              return (
+                                                <div className="flex flex-col gap-1.5 text-xs text-gray-700 bg-gray-50/90 p-2.5 rounded-lg border border-gray-200/80">
+                                                  {notes.map((note, nIdx) => (
+                                                    <div
+                                                      key={nIdx}
+                                                      className="flex items-start gap-1.5 leading-relaxed"
+                                                    >
+                                                      {notes.length > 1 && (
+                                                        <span className="text-blue-500 font-bold shrink-0 mt-0.5">
+                                                          •
+                                                        </span>
+                                                      )}
+                                                      <span className="text-gray-700">
+                                                        {note}
+                                                      </span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              );
+                                            })()}
+                                          </td>
                                         </tr>
 
                                         {/* Secondary Issue Row(s) */}
@@ -1480,6 +1530,15 @@ export default function CompanyDashboard({
                                                     </span>
                                                   </div>
                                                 </td>
+                                                <td className="px-5 py-3.5 text-gray-400 text-xs italic">
+                                                  {item.pcFollowUp ? (
+                                                    <span className="text-xs text-gray-700 whitespace-normal">
+                                                      {item.pcFollowUp}
+                                                    </span>
+                                                  ) : (
+                                                    "-"
+                                                  )}
+                                                </td>
                                               </tr>
                                             ))
                                           : (secInfo.name ||
@@ -1520,6 +1579,9 @@ export default function CompanyDashboard({
                                                       )}
                                                     </span>
                                                   </div>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-gray-400 text-xs italic">
+                                                  -
                                                 </td>
                                               </tr>
                                             )}

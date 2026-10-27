@@ -176,6 +176,8 @@ export const getSecondaryIssueInfo = (issue) => {
         cuts: item.cuts ?? item.cut ?? 0,
         operators: itemOps,
         shifts: itemShifts,
+        pcFollowUp:
+          item.pcFollowUp || item.pc_follow_up || item["PC Follow Up"] || "",
       };
     });
   }
