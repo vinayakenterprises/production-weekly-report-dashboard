@@ -1,4 +1,3 @@
-// src/utils/dashboardUtils.js
 // Utility functions for Production Dashboard
 
 // Converts decimal hours (32.72) back to human-readable strings (32h 43m)
@@ -93,16 +92,15 @@ export const isUnattributedIssue = (name) =>
 
 // Issues excluded from the Operator & Issues Overview table and overview metrics
 export const EXCLUDED_OVERVIEW_ISSUES = [
-  "Scheduled Holds (Dross/Maintenance)",
-  "Scheduled Holds",
-  "Scheduled Hold",
-  "Mechanical (Cuppling/Share Pin)",
-  "Coiler Change",
-  "Ingot unavailable",
-  "Ingot Unavailable",
-  "Space issue",
-  "Other",
-  "Others",
+  // "Scheduled Holds (Dross/Maintenance)",
+  // "Scheduled Holds",
+  // "Scheduled Hold",
+  // "Mechanical (Cuppling/Share Pin)",
+  // "Coiler Change",
+  // "Ingot unavailable",
+  // "Ingot Unavailable",
+  // "Space issue",
+  // "Other",
 ];
 
 export const isExcludedOverviewIssue = (name) => {

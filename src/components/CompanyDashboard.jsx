@@ -1461,12 +1461,13 @@ export default function CompanyDashboard({
                                                   </span>
                                                 );
                                               }
-                                              const notes = followUpText.includes("|")
-                                                ? followUpText
-                                                    .split("|")
-                                                    .map((n) => n.trim())
-                                                    .filter(Boolean)
-                                                : [followUpText];
+                                              const notes =
+                                                followUpText.includes("|")
+                                                  ? followUpText
+                                                      .split("|")
+                                                      .map((n) => n.trim())
+                                                      .filter(Boolean)
+                                                  : [followUpText];
 
                                               return (
                                                 <div className="flex flex-col gap-1.5 text-xs text-gray-700 bg-gray-50/90 p-2.5 rounded-lg border border-gray-200/80">
@@ -1760,7 +1761,7 @@ export default function CompanyDashboard({
                             <td className="px-2.5 py-2.5 text-right font-black text-gray-900 border-l border-gray-200">
                               {op.total}
                             </td>
-                            <td className="px-2.5 py-2.5 text-right font-bold text-red-700 border-l border-gray-200 whitespace-nowrap">
+                            <td className="px-2.5 py-2.5 text-right font-bold text-gray-900 border-l border-gray-200 whitespace-nowrap">
                               {formatTime(op.hoursLost)}
                             </td>
                             <td className="px-2.5 py-2.5 text-right font-extrabold text-indigo-600 border-l border-gray-200">
@@ -1777,7 +1778,7 @@ export default function CompanyDashboard({
                       )}
                     </tbody>
                     {displayedOperatorRows.length > 0 && (
-                      <tfoot className="border-t-2 border-gray-300 bg-gray-100/90 font-bold">
+                      <tfoot className="border-t-2 border-gray-300 font-bold bg-gray-200/90">
                         <tr>
                           <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300">
                             TOTALS
