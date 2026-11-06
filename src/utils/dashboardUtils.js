@@ -227,6 +227,41 @@ export const getSecondaryIssueInfo = (issue) => {
   };
 };
 
+// Check if an issue represents "Others"
+export const isOtherIssue = (name) => {
+  if (!name || typeof name !== "string") return false;
+  const clean = name.trim().toLowerCase();
+  return clean === "others" || clean === "other" || clean.startsWith("other");
+};
+
+// Calculates the effective production hours lost to display for an issue in the daily overview table.
+// For "Others", if sub-issues exist, sums their time lost to show the total for Others.
+export const getIssueDisplayHoursLost = (issue, secInfo = null) => {
+  if (!issue) return 0;
+  const resolvedSecInfo = secInfo || getSecondaryIssueInfo(issue);
+  const isOther = isOtherIssue(issue.name);
+
+  const subIssuesTotal =
+    resolvedSecInfo.items && resolvedSecInfo.items.length > 0
+      ? resolvedSecInfo.items.reduce(
+          (sum, item) => sum + (Number(item.hours) || 0),
+          0,
+        )
+      : Number(resolvedSecInfo.hoursLost) || 0;
+
+  if (isOther) {
+    if (subIssuesTotal > 0) {
+      const netHours = Number(resolvedSecInfo.netHoursLost) || 0;
+      return Number((subIssuesTotal + netHours).toFixed(2));
+    }
+    return Number(issue.productionHoursLost) || 0;
+  }
+
+  return resolvedSecInfo.hoursLost > 0
+    ? resolvedSecInfo.netHoursLost
+    : Number(issue.productionHoursLost) || 0;
+};
+
 // Helper to extract secondary issue name and secondary hours lost from a day
 export const getDaySecondaryInfo = (day) => {
   if (!day || typeof day !== "object") {

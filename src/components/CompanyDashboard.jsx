@@ -29,6 +29,8 @@ import {
   isScheduledHoldsIssue,
   getSecondaryIssueInfo,
   getDaySecondaryInfo,
+  isOtherIssue,
+  getIssueDisplayHoursLost,
   getMondayOfCurrentWeek,
   getCurrentMonthKey,
   formatMonthLabel,
@@ -1036,7 +1038,7 @@ export default function CompanyDashboard({
               <div className="bg-white border border-gray-200 p-5 rounded-xl shadow-xs hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-gray-800">
-                    Total Hours Lost
+                    Total Production Hours Lost
                   </span>
                   <div className="bg-red-50 p-2 rounded-lg">
                     <ClockFading className="text-red-500 size-6" />
@@ -1046,9 +1048,6 @@ export default function CompanyDashboard({
                   <p className="text-xl font-black text-gray-900">
                     {formatTime(totalProductionHoursLost)}
                   </p>
-                  <span className="text-xs text-red-600 font-bold">
-                    Gross downtime
-                  </span>
                 </div>
               </div>
 
@@ -1374,9 +1373,9 @@ export default function CompanyDashboard({
                                     <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs text-right">
                                       TIME LOST
                                     </th>
-                                    <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs min-w-[240px]">
+                                    {/* <th className="px-5 py-3.5 font-bold text-gray-600 uppercase tracking-wider text-xs min-w-[240px]">
                                       PC FOLLOW UP
-                                    </th>
+                                    </th> */}
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -1386,6 +1385,8 @@ export default function CompanyDashboard({
                                     );
                                     const secInfo =
                                       getSecondaryIssueInfo(issue);
+                                    const displayHours =
+                                      getIssueDisplayHoursLost(issue, secInfo);
                                     return (
                                       <Fragment key={`issue-group-${idx}`}>
                                         {/* Primary Issue Row */}
@@ -1434,15 +1435,11 @@ export default function CompanyDashboard({
                                           <td className="px-5 py-3.5 text-right font-bold text-gray-700">
                                             <div className="flex flex-col items-end">
                                               <span>
-                                                {formatTime(
-                                                  secInfo.hoursLost > 0
-                                                    ? secInfo.netHoursLost
-                                                    : issue.productionHoursLost,
-                                                )}
+                                                {formatTime(displayHours)}
                                               </span>
                                             </div>
                                           </td>
-                                          <td className="px-5 py-3.5 min-w-[240px] max-w-sm sm:max-w-md whitespace-normal">
+                                          {/* <td className="px-5 py-3.5 min-w-[240px] max-w-sm sm:max-w-md whitespace-normal">
                                             {(() => {
                                               const rawFollowUp =
                                                 issue.pcFollowUp ||
@@ -1489,7 +1486,7 @@ export default function CompanyDashboard({
                                                 </div>
                                               );
                                             })()}
-                                          </td>
+                                          </td> */}
                                         </tr>
 
                                         {/* Secondary Issue Row(s) */}
