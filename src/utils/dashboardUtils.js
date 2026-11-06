@@ -485,6 +485,7 @@ export const normalizeAllDailyData = (weeklyData) => {
     const baseDate = new Date(year, month - 1, day, 12, 0, 0);
 
     const sourceBreakdown = w.dailyIssueBreakdown || [];
+    const sourceOperatorShifts = w.dailyOperatorShifts || [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(baseDate);
@@ -501,6 +502,19 @@ export const normalizeAllDailyData = (weeklyData) => {
       const dateLabelAlt = `${monthStr} ${String(dayNum).padStart(2, "0")}`;
 
       const record = sourceBreakdown.find((r) => {
+        if (!r.date) return false;
+        const normalized = r.date.trim().toLowerCase();
+        return (
+          normalized ===
+            `${String(dayNum).padStart(2, "0")} ${monthStr}`.toLowerCase() ||
+          normalized === `${dayNum} ${monthStr}`.toLowerCase() ||
+          normalized ===
+            `${monthStr} ${String(dayNum).padStart(2, "0")}`.toLowerCase() ||
+          normalized === `${monthStr} ${dayNum}`.toLowerCase()
+        );
+      });
+
+      const dayShiftRecord = sourceOperatorShifts.find((r) => {
         if (!r.date) return false;
         const normalized = r.date.trim().toLowerCase();
         return (
@@ -544,6 +558,9 @@ export const normalizeAllDailyData = (weeklyData) => {
           "",
         secondaryIssues: record?.secondaryIssues || [],
         issues: record?.issues ?? [],
+        operatorShifts: Array.isArray(dayShiftRecord?.operators)
+          ? dayShiftRecord.operators
+          : [],
       });
     }
   });

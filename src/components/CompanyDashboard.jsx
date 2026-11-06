@@ -447,7 +447,7 @@ export default function CompanyDashboard({
           breakdown: {},
           cuts: 0,
           hoursLost: 0,
-          shiftCounts: { Day: 0, Night: 0 },
+          shiftCounts: { Day: 0, Night: 0, total: 0 },
         };
       }
       return byName[targetKey];
@@ -464,6 +464,18 @@ export default function CompanyDashboard({
       return filteredDays.some(
         (d) => d.dateObj >= weekStart && d.dateObj <= weekEnd,
       );
+    });
+
+    // Ensure all known operators from matchingWeeks (matrix and rosters) are registered
+    matchingWeeks.forEach((w) => {
+      (w.operatorMatrix || []).forEach((op) => {
+        if (op.name) getOrCreateOp(op.name);
+      });
+      (w.dailyOperatorShifts || []).forEach((dayRoster) => {
+        (dayRoster.operators || []).forEach((op) => {
+          if (op.name) getOrCreateOp(op.name);
+        });
+      });
     });
 
     const hasOperatorMatrix = matchingWeeks.some(
@@ -507,23 +519,9 @@ export default function CompanyDashboard({
               entry.total += c;
             });
           }
-
-          // 3. Shifts from operatorMatrix
-          if (Array.isArray(op.shifts)) {
-            op.shifts.forEach((s) => {
-              if (!s) return;
-              const str = String(s).trim();
-              const normalized =
-                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-              if (normalized === "Day" || normalized === "Night") {
-                entry.shiftCounts[normalized] =
-                  (entry.shiftCounts[normalized] || 0) + 1;
-              }
-            });
-          }
         });
 
-        // 4. Cuts from operatorCuts
+        // 3. Cuts from operatorCuts
         if (Array.isArray(w.operatorCuts)) {
           w.operatorCuts.forEach((oc) => {
             if (!oc.name) return;
@@ -532,55 +530,6 @@ export default function CompanyDashboard({
           });
         }
       });
-
-      // 5. Supplement shifts from daily breakdown in case op.shifts was unpopulated in historical records
-      filteredDays.forEach((day) => {
-        (day.issues || []).forEach((issue) => {
-          let rawShifts = [];
-          if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
-            rawShifts = issue.shifts;
-          } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
-            rawShifts = [issue.shifts.trim()];
-          } else if (typeof issue.shift === "string" && issue.shift.trim()) {
-            rawShifts = [issue.shift.trim()];
-          } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
-            rawShifts = issue.shift;
-          }
-
-          const rawOperators =
-            issue.operators && issue.operators.length > 0
-              ? issue.operators
-              : [];
-
-          rawOperators.forEach((opName, opIdx) => {
-            if (!opName) return;
-            const entry = getOrCreateOp(opName);
-            const opDetail =
-              issue.operatorDetails?.find(
-                (d) =>
-                  d.name?.trim().toLowerCase() === opName.trim().toLowerCase(),
-              ) || issue.operatorDetails?.[opIdx];
-
-            const opShifts =
-              opDetail &&
-              Array.isArray(opDetail.shifts) &&
-              opDetail.shifts.length > 0
-                ? opDetail.shifts
-                : rawShifts;
-
-            opShifts.forEach((s) => {
-              if (!s) return;
-              const str = String(s).trim();
-              const normalized =
-                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-              if (normalized === "Day" || normalized === "Night") {
-                entry.shiftCounts[normalized] =
-                  (entry.shiftCounts[normalized] || 0) + 1;
-              }
-            });
-          });
-        });
-      });
     } else {
       // Fallback: Legacy daily breakdown calculation
       filteredDays.forEach((day) => {
@@ -588,17 +537,6 @@ export default function CompanyDashboard({
           if (!issue.name || isExcludedOverviewIssue(issue.name)) return;
           const occurrences = issue.occurrences || 0;
           const hours = issue.productionHoursLost || 0;
-
-          let rawShifts = [];
-          if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
-            rawShifts = issue.shifts;
-          } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
-            rawShifts = [issue.shifts.trim()];
-          } else if (typeof issue.shift === "string" && issue.shift.trim()) {
-            rawShifts = [issue.shift.trim()];
-          } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
-            rawShifts = issue.shift;
-          }
 
           const rawOperators =
             issue.operators && issue.operators.length > 0
@@ -616,18 +554,11 @@ export default function CompanyDashboard({
                   d.name?.trim().toLowerCase() === originalOpName.toLowerCase(),
               ) || issue.operatorDetails?.[opIdx];
 
-            const opShifts =
-              opDetail &&
-              Array.isArray(opDetail.shifts) &&
-              opDetail.shifts.length > 0
-                ? opDetail.shifts
-                : rawShifts;
-
             const opOccurrences =
               opDetail &&
               Array.isArray(opDetail.shifts) &&
               opDetail.shifts.length > 0
-                ? opDetail.shifts.length
+                ? opDetail.shifts
                 : occurrences / operators.length;
 
             entry.total += opOccurrences;
@@ -649,17 +580,6 @@ export default function CompanyDashboard({
                     : hours * proportion;
 
             entry.hoursLost += actualOpHours;
-
-            opShifts.forEach((s) => {
-              if (!s) return;
-              const str = String(s).trim();
-              const normalized =
-                str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-              if (normalized === "Day" || normalized === "Night") {
-                entry.shiftCounts[normalized] =
-                  (entry.shiftCounts[normalized] || 0) + 1;
-              }
-            });
           });
         });
       });
@@ -701,7 +621,7 @@ export default function CompanyDashboard({
                 opDetail &&
                 Array.isArray(opDetail.shifts) &&
                 opDetail.shifts.length > 0
-                  ? opDetail.shifts.length
+                  ? opDetail.shifts
                   : occurrences / operators.length;
               const proportion =
                 occurrences > 0
@@ -714,6 +634,113 @@ export default function CompanyDashboard({
       }
     }
 
+    // Accurate Shift Counting per operator across filteredDays:
+    // 1. Uses day.operatorShifts when available (accurate roster including 0-incident shifts)
+    // 2. Falls back to day.issues (deduplicated by date+shift so multiple incidents don't inflate shifts)
+    const operatorShiftSets = {};
+
+    filteredDays.forEach((day) => {
+      const hasOfficialRoster =
+        Array.isArray(day.operatorShifts) && day.operatorShifts.length > 0;
+
+      if (hasOfficialRoster) {
+        day.operatorShifts.forEach((op) => {
+          if (!op.name) return;
+          const entry = getOrCreateOp(op.name);
+          const rawShifts =
+            Array.isArray(op.shifts) && op.shifts.length > 0
+              ? op.shifts
+              : op.shifts
+                ? [op.shifts]
+                : ["Day"];
+
+          if (!operatorShiftSets[entry.name]) {
+            operatorShiftSets[entry.name] = new Set();
+          }
+
+          rawShifts.forEach((s) => {
+            if (!s) return;
+            const str = String(s).trim();
+            const normalized =
+              str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+            const key = `${day.dateStr}-${normalized}`;
+            if (!operatorShiftSets[entry.name].has(key)) {
+              operatorShiftSets[entry.name].add(key);
+              if (normalized === "Day" || normalized === "Night") {
+                entry.shiftCounts[normalized] =
+                  (entry.shiftCounts[normalized] || 0) + 1;
+              }
+              entry.shiftCounts.total = (entry.shiftCounts.total || 0) + 1;
+            }
+          });
+        });
+      } else {
+        (day.issues || []).forEach((issue) => {
+          let rawShifts = [];
+          if (Array.isArray(issue.shifts) && issue.shifts.length > 0) {
+            rawShifts = issue.shifts;
+          } else if (typeof issue.shifts === "string" && issue.shifts.trim()) {
+            rawShifts = [issue.shifts.trim()];
+          } else if (typeof issue.shift === "string" && issue.shift.trim()) {
+            rawShifts = [issue.shift.trim()];
+          } else if (Array.isArray(issue.shift) && issue.shift.length > 0) {
+            rawShifts = issue.shift;
+          }
+
+          const rawOperators =
+            issue.operators && issue.operators.length > 0
+              ? issue.operators
+              : [];
+
+          rawOperators.forEach((opName, opIdx) => {
+            if (!opName) return;
+            const entry = getOrCreateOp(opName);
+            const opDetail =
+              issue.operatorDetails?.find(
+                (d) =>
+                  d.name?.trim().toLowerCase() === opName.trim().toLowerCase(),
+              ) || issue.operatorDetails?.[opIdx];
+
+            const opShifts =
+              opDetail &&
+              Array.isArray(opDetail.shifts) &&
+              opDetail.shifts.length > 0
+                ? opDetail.shifts
+                : rawShifts;
+
+            if (!operatorShiftSets[entry.name]) {
+              operatorShiftSets[entry.name] = new Set();
+            }
+
+            if (opShifts.length === 0) {
+              const key = `${day.dateStr}-Day`;
+              if (!operatorShiftSets[entry.name].has(key)) {
+                operatorShiftSets[entry.name].add(key);
+                entry.shiftCounts.Day = (entry.shiftCounts.Day || 0) + 1;
+                entry.shiftCounts.total = (entry.shiftCounts.total || 0) + 1;
+              }
+            } else {
+              opShifts.forEach((s) => {
+                if (!s) return;
+                const str = String(s).trim();
+                const normalized =
+                  str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+                const key = `${day.dateStr}-${normalized}`;
+                if (!operatorShiftSets[entry.name].has(key)) {
+                  operatorShiftSets[entry.name].add(key);
+                  if (normalized === "Day" || normalized === "Night") {
+                    entry.shiftCounts[normalized] =
+                      (entry.shiftCounts[normalized] || 0) + 1;
+                  }
+                  entry.shiftCounts.total = (entry.shiftCounts.total || 0) + 1;
+                }
+              });
+            }
+          });
+        });
+      }
+    });
+
     Object.values(byName).forEach((op) => {
       op.cuts = Math.round(op.cuts);
       op.total = Math.round(op.total);
@@ -725,10 +752,21 @@ export default function CompanyDashboard({
     });
 
     return Object.values(byName)
-      .filter((op) => op.total > 0 || op.cuts > 0 || op.hoursLost > 0)
+      .filter(
+        (op) =>
+          op.total > 0 ||
+          op.cuts > 0 ||
+          op.hoursLost > 0 ||
+          (op.shiftCounts?.Day || 0) > 0 ||
+          (op.shiftCounts?.Night || 0) > 0 ||
+          (op.shiftCounts?.total || 0) > 0,
+      )
       .sort(
         (a, b) =>
-          b.cuts - a.cuts || b.hoursLost - a.hoursLost || b.total - a.total,
+          b.cuts - a.cuts ||
+          b.hoursLost - a.hoursLost ||
+          b.total - a.total ||
+          (b.shiftCounts?.total || 0) - (a.shiftCounts?.total || 0),
       );
   }, [filteredDays, weeklyData]);
 
@@ -1663,6 +1701,18 @@ export default function CompanyDashboard({
                         <th className="bg-gray-200 px-3 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] rounded-l-lg border-r border-gray-300 wrap-break-word">
                           Operator
                         </th>
+                        <th className="px-2.5 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] text-center border-r border-gray-300 whitespace-nowrap min-w-[85px]">
+                          <div className="inline-flex items-center gap-1 justify-center">
+                            <Sun className="size-3.5 text-amber-500 shrink-0" />
+                            <span>Day Shift</span>
+                          </div>
+                        </th>
+                        <th className="px-2.5 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[11px] text-center border-r border-gray-300 whitespace-nowrap min-w-[85px]">
+                          <div className="inline-flex items-center gap-1 justify-center">
+                            <Moon className="size-3.5 text-indigo-500 shrink-0" />
+                            <span>Night Shift</span>
+                          </div>
+                        </th>
                         {faultCategories.length === 0 ? (
                           <th className="px-2 py-2.5 font-bold text-gray-700 uppercase tracking-wider text-[10px] text-center">
                             Faults
@@ -1696,7 +1746,7 @@ export default function CompanyDashboard({
                       {displayedOperatorRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={faultCategories.length + 4}
+                            colSpan={faultCategories.length + 6}
                             className="px-4 py-8 text-center text-sm text-gray-500 italic"
                           >
                             No operator data recorded for this date range or
@@ -1710,25 +1760,35 @@ export default function CompanyDashboard({
                             className="hover:bg-gray-50/80 transition-colors"
                           >
                             <td className="px-3 py-2.5 font-extrabold text-gray-900 border-r border-gray-200 whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span>{op.name}</span>
-                                {op.shiftCounts?.Day > 0 && (
-                                  <span
-                                    title={`Day Shift: ${op.shiftCounts.Day} logged records`}
-                                    className="inline-flex items-center justify-center p-0.5 rounded bg-amber-100 text-amber-700 text-[10px]"
-                                  >
-                                    <Sun className="size-3" />
-                                  </span>
-                                )}
-                                {op.shiftCounts?.Night > 0 && (
-                                  <span
-                                    title={`Night Shift: ${op.shiftCounts.Night} logged records`}
-                                    className="inline-flex items-center justify-center p-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px]"
-                                  >
-                                    <Moon className="size-3" />
-                                  </span>
-                                )}
-                              </div>
+                              {op.name}
+                            </td>
+                            <td className="px-2.5 py-2.5 text-center border-r border-gray-200 whitespace-nowrap">
+                              {(op.shiftCounts?.Day || 0) > 0 ? (
+                                <span
+                                  title={`Day Shift: ${op.shiftCounts.Day} logged records`}
+                                  className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 min-w-[28px]"
+                                >
+                                  {op.shiftCounts.Day}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300 font-normal text-xs">
+                                  -
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2.5 py-2.5 text-center border-r border-gray-200 whitespace-nowrap">
+                              {(op.shiftCounts?.Night || 0) > 0 ? (
+                                <span
+                                  title={`Night Shift: ${op.shiftCounts.Night} logged records`}
+                                  className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 min-w-[28px]"
+                                >
+                                  {op.shiftCounts.Night}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300 font-normal text-xs">
+                                  -
+                                </span>
+                              )}
                             </td>
                             {faultCategories.length === 0 ? (
                               <td className="px-2 py-2.5 text-center text-gray-400 font-medium">
@@ -1779,6 +1839,12 @@ export default function CompanyDashboard({
                         <tr>
                           <td className="px-3 py-2.5 text-gray-900 font-extrabold text-xs uppercase border-r border-gray-300">
                             TOTALS
+                          </td>
+                          <td className="px-2.5 py-2.5 text-center text-gray-400 font-normal text-xs border-r border-gray-300 whitespace-nowrap">
+                            -
+                          </td>
+                          <td className="px-2.5 py-2.5 text-center text-gray-400 font-normal text-xs border-r border-gray-300 whitespace-nowrap">
+                            -
                           </td>
                           {faultCategories.length === 0 ? (
                             <td className="px-2 py-2.5 text-center text-gray-400">
