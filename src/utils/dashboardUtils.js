@@ -1,4 +1,3 @@
-// src/utils/dashboardUtils.js
 // Utility functions for Production Dashboard
 
 // Converts decimal hours (32.72) back to human-readable strings (32h 43m)
@@ -93,16 +92,15 @@ export const isUnattributedIssue = (name) =>
 
 // Issues excluded from the Operator & Issues Overview table and overview metrics
 export const EXCLUDED_OVERVIEW_ISSUES = [
-  "Scheduled Holds (Dross/Maintenance)",
-  "Scheduled Holds",
-  "Scheduled Hold",
-  "Mechanical (Cuppling/Share Pin)",
-  "Coiler Change",
-  "Ingot unavailable",
-  "Ingot Unavailable",
-  "Space issue",
-  "Other",
-  "Others",
+  // "Scheduled Holds (Dross/Maintenance)",
+  // "Scheduled Holds",
+  // "Scheduled Hold",
+  // "Mechanical (Cuppling/Share Pin)",
+  // "Coiler Change",
+  // "Ingot unavailable",
+  // "Ingot Unavailable",
+  // "Space issue",
+  // "Other",
 ];
 
 export const isExcludedOverviewIssue = (name) => {
@@ -176,6 +174,8 @@ export const getSecondaryIssueInfo = (issue) => {
         cuts: item.cuts ?? item.cut ?? 0,
         operators: itemOps,
         shifts: itemShifts,
+        pcFollowUp:
+          item.pcFollowUp || item.pc_follow_up || item["PC Follow Up"] || "",
       };
     });
   }
@@ -225,6 +225,41 @@ export const getSecondaryIssueInfo = (issue) => {
     operators: allItemOps.length > 0 ? allItemOps : defaultOperators,
     shifts: allItemShifts.length > 0 ? allItemShifts : defaultShifts,
   };
+};
+
+// Check if an issue represents "Others"
+export const isOtherIssue = (name) => {
+  if (!name || typeof name !== "string") return false;
+  const clean = name.trim().toLowerCase();
+  return clean === "others" || clean === "other" || clean.startsWith("other");
+};
+
+// Calculates the effective production hours lost to display for an issue in the daily overview table.
+// For "Others", if sub-issues exist, sums their time lost to show the total for Others.
+export const getIssueDisplayHoursLost = (issue, secInfo = null) => {
+  if (!issue) return 0;
+  const resolvedSecInfo = secInfo || getSecondaryIssueInfo(issue);
+  const isOther = isOtherIssue(issue.name);
+
+  const subIssuesTotal =
+    resolvedSecInfo.items && resolvedSecInfo.items.length > 0
+      ? resolvedSecInfo.items.reduce(
+          (sum, item) => sum + (Number(item.hours) || 0),
+          0,
+        )
+      : Number(resolvedSecInfo.hoursLost) || 0;
+
+  if (isOther) {
+    if (subIssuesTotal > 0) {
+      const netHours = Number(resolvedSecInfo.netHoursLost) || 0;
+      return Number((subIssuesTotal + netHours).toFixed(2));
+    }
+    return Number(issue.productionHoursLost) || 0;
+  }
+
+  return resolvedSecInfo.hoursLost > 0
+    ? resolvedSecInfo.netHoursLost
+    : Number(issue.productionHoursLost) || 0;
 };
 
 // Helper to extract secondary issue name and secondary hours lost from a day
@@ -450,6 +485,7 @@ export const normalizeAllDailyData = (weeklyData) => {
     const baseDate = new Date(year, month - 1, day, 12, 0, 0);
 
     const sourceBreakdown = w.dailyIssueBreakdown || [];
+    const sourceOperatorShifts = w.dailyOperatorShifts || [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(baseDate);
@@ -466,6 +502,19 @@ export const normalizeAllDailyData = (weeklyData) => {
       const dateLabelAlt = `${monthStr} ${String(dayNum).padStart(2, "0")}`;
 
       const record = sourceBreakdown.find((r) => {
+        if (!r.date) return false;
+        const normalized = r.date.trim().toLowerCase();
+        return (
+          normalized ===
+            `${String(dayNum).padStart(2, "0")} ${monthStr}`.toLowerCase() ||
+          normalized === `${dayNum} ${monthStr}`.toLowerCase() ||
+          normalized ===
+            `${monthStr} ${String(dayNum).padStart(2, "0")}`.toLowerCase() ||
+          normalized === `${monthStr} ${dayNum}`.toLowerCase()
+        );
+      });
+
+      const dayShiftRecord = sourceOperatorShifts.find((r) => {
         if (!r.date) return false;
         const normalized = r.date.trim().toLowerCase();
         return (
@@ -509,6 +558,9 @@ export const normalizeAllDailyData = (weeklyData) => {
           "",
         secondaryIssues: record?.secondaryIssues || [],
         issues: record?.issues ?? [],
+        operatorShifts: Array.isArray(dayShiftRecord?.operators)
+          ? dayShiftRecord.operators
+          : [],
       });
     }
   });
