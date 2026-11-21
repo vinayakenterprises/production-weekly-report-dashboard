@@ -486,6 +486,7 @@ export const normalizeAllDailyData = (weeklyData) => {
 
     const sourceBreakdown = w.dailyIssueBreakdown || [];
     const sourceOperatorShifts = w.dailyOperatorShifts || [];
+    const sourceDailyBundles = w.dailyBundles || [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(baseDate);
@@ -527,12 +528,41 @@ export const normalizeAllDailyData = (weeklyData) => {
         );
       });
 
+      const dayBundleRecord = sourceDailyBundles.find((r) => {
+        if (!r.date) return false;
+        const normalized = r.date.trim().toLowerCase();
+        return (
+          normalized ===
+            `${String(dayNum).padStart(2, "0")} ${monthStr}`.toLowerCase() ||
+          normalized === `${dayNum} ${monthStr}`.toLowerCase() ||
+          normalized ===
+            `${monthStr} ${String(dayNum).padStart(2, "0")}`.toLowerCase() ||
+          normalized === `${monthStr} ${dayNum}`.toLowerCase()
+        );
+      });
+
+      const bundlePlanned =
+        typeof record?.bundlePlanned === "number"
+          ? record.bundlePlanned
+          : typeof dayBundleRecord?.bundlePlanned === "number"
+            ? dayBundleRecord.bundlePlanned
+            : null;
+
+      const bundleActual =
+        typeof record?.bundleActual === "number"
+          ? record.bundleActual
+          : typeof dayBundleRecord?.bundleActual === "number"
+            ? dayBundleRecord.bundleActual
+            : null;
+
       allDays.push({
         dateStr,
         dateObj: d,
         weekday: weekdays[i],
         dateLabel,
         dateLabelAlt,
+        bundlePlanned,
+        bundleActual,
         productionHoursLost: record?.productionHoursLost ?? 0,
         secondaryProductionHoursLost:
           Number(
