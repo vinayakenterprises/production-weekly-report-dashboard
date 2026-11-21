@@ -16,6 +16,8 @@ import {
   X,
   Sun,
   Moon,
+  Package,
+  CheckCircle2,
 } from "lucide-react";
 import { useState, useEffect, useMemo, Fragment } from "react";
 import {
@@ -280,6 +282,61 @@ export default function CompanyDashboard({
       0,
     );
   }, [filteredDays]);
+
+  // Bundle metrics across filteredDays (or matchingWeeks fallback)
+  const bundleStats = useMemo(() => {
+    let planned = 0;
+    let actual = 0;
+    let hasData = false;
+
+    filteredDays.forEach((d) => {
+      if (typeof d.bundlePlanned === "number") {
+        planned += d.bundlePlanned;
+        hasData = true;
+      }
+      if (typeof d.bundleActual === "number") {
+        actual += d.bundleActual;
+        hasData = true;
+      }
+    });
+
+    if (!hasData) {
+      const matchingWeeks = weeklyData.filter((w) => {
+        if (!w.week) return false;
+        const weekParts = w.week.split("-").map(Number);
+        if (weekParts.length !== 3) return false;
+        const weekStart = new Date(
+          weekParts[0],
+          weekParts[1] - 1,
+          weekParts[2],
+        );
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        return filteredDays.some(
+          (d) => d.dateObj >= weekStart && d.dateObj <= weekEnd,
+        );
+      });
+
+      matchingWeeks.forEach((w) => {
+        if (typeof w.totalBundlePlanned === "number") {
+          planned += w.totalBundlePlanned;
+          hasData = true;
+        }
+        if (typeof w.totalBundleActual === "number") {
+          actual += w.totalBundleActual;
+          hasData = true;
+        }
+      });
+    }
+
+    return {
+      planned,
+      actual,
+      hasData,
+      variance: actual - planned,
+      efficiency: planned > 0 ? Math.round((actual / planned) * 100) : 0,
+    };
+  }, [filteredDays, weeklyData]);
 
   // Total hours lost and occurrences for Scheduled Holds (Dross/Maintenance) in range
   const scheduledHoldsStats = useMemo(() => {
@@ -787,7 +844,10 @@ export default function CompanyDashboard({
           const matrixOp = (w.operatorMatrix || []).find(
             (m) => m.name && m.name.toLowerCase() === op.name.toLowerCase(),
           );
-          if (matrixOp?.shiftsWorked && typeof matrixOp.shiftsWorked === "object") {
+          if (
+            matrixOp?.shiftsWorked &&
+            typeof matrixOp.shiftsWorked === "object"
+          ) {
             const dayShifts = Number(matrixOp.shiftsWorked.Day) || 0;
             const nightShifts = Number(matrixOp.shiftsWorked.Night) || 0;
             if (dayShifts > 0 || nightShifts > 0) {
@@ -795,7 +855,8 @@ export default function CompanyDashboard({
               op.shiftCounts.Night = (op.shiftCounts.Night || 0) + nightShifts;
               op.shiftCounts.total =
                 (op.shiftCounts.total || 0) +
-                (Number(matrixOp.shiftsWorked.total) || dayShifts + nightShifts);
+                (Number(matrixOp.shiftsWorked.total) ||
+                  dayShifts + nightShifts);
             }
           }
         });
@@ -1338,10 +1399,33 @@ export default function CompanyDashboard({
             <div className="space-y-8">
               {/* Hours Lost Overview */}
               <div className="bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden">
-                <div className="p-6 border-b border-gray-100 bg-white flex items-center justify-between">
+                <div className="p-6 border-b border-gray-100 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">
                     DAILY PRODUCTION HOURS LOST OVERVIEW
                   </h2>
+
+                  {bundleStats.hasData && (
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200/80 rounded-lg shadow-2xs">
+                        <Package className="size-4 text-blue-600 shrink-0" />
+                        <span className="text-xs font-semibold text-blue-900">
+                          Total Bundles Planned:
+                        </span>
+                        <span className="text-xs font-black text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">
+                          {bundleStats.planned}
+                        </span>
+                      </div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200/80 rounded-lg shadow-2xs">
+                        <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                        <span className="text-xs font-semibold text-emerald-900">
+                          Total Bundles Actual:
+                        </span>
+                        <span className="text-xs font-black text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                          {bundleStats.actual}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {!hasAnyDailyIssues ? (
@@ -1404,6 +1488,34 @@ export default function CompanyDashboard({
                             </div>
 
                             <div className="flex items-center gap-3 sm:gap-6">
+                              {bundleStats.hasData &&
+                                (typeof day.bundlePlanned === "number" ||
+                                  typeof day.bundleActual === "number") && (
+                                  <div
+                                    className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-gray-700"
+                                    title={`Planned: ${day.bundlePlanned ?? 0} | Actual: ${day.bundleActual ?? 0}`}
+                                  >
+                                    <Package className="size-3.5 text-blue-600 shrink-0" />
+                                    <span className="font-bold text-gray-900">
+                                      Bundles:
+                                    </span>
+                                    <span className="text-gray-500 font-medium">
+                                      Planned:
+                                    </span>
+                                    <span className="font-bold text-blue-600">
+                                      {day.bundlePlanned ?? 0}
+                                    </span>
+                                    <span className="text-gray-300 mx-0.5">
+                                      |
+                                    </span>
+                                    <span className="text-gray-500 font-medium">
+                                      Actual:
+                                    </span>
+                                    <span className="font-bold text-emerald-700">
+                                      {day.bundleActual ?? 0}
+                                    </span>
+                                  </div>
+                                )}
                               {/* {daySec.hoursLost > 0 && (
                                 <span
                                   className="hidden md:inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-md text-xs bg-amber-50 text-amber-900 border border-amber-200"
