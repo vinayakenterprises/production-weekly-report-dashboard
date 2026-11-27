@@ -332,6 +332,7 @@ export default function CompanyDashboard({
     return {
       planned,
       actual,
+      lost: Math.max(0, planned - actual),
       hasData,
       variance: actual - planned,
       efficiency: planned > 0 ? Math.round((actual / planned) * 100) : 0,
@@ -1424,6 +1425,15 @@ export default function CompanyDashboard({
                           {bundleStats.actual}
                         </span>
                       </div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-rose-50 border border-rose-200/80 rounded-lg shadow-2xs">
+                        <TriangleAlert className="size-4 text-rose-600 shrink-0" />
+                        <span className="text-xs font-semibold text-rose-900">
+                          Total Bundle Lost:
+                        </span>
+                        <span className="text-xs font-black text-rose-700 bg-white px-2 py-0.5 rounded border border-rose-200">
+                          {bundleStats.lost}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1488,34 +1498,93 @@ export default function CompanyDashboard({
                             </div>
 
                             <div className="flex items-center gap-3 sm:gap-6">
-                              {bundleStats.hasData &&
+                              {((bundleStats.hasData &&
                                 (typeof day.bundlePlanned === "number" ||
-                                  typeof day.bundleActual === "number") && (
-                                  <div
-                                    className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-gray-700"
-                                    title={`Planned: ${day.bundlePlanned ?? 0} | Actual: ${day.bundleActual ?? 0}`}
-                                  >
-                                    <Package className="size-3.5 text-blue-600 shrink-0" />
-                                    <span className="font-bold text-gray-900">
-                                      Bundles:
-                                    </span>
-                                    <span className="text-gray-500 font-medium">
-                                      Planned:
-                                    </span>
-                                    <span className="font-bold text-blue-600">
-                                      {day.bundlePlanned ?? 0}
-                                    </span>
-                                    <span className="text-gray-300 mx-0.5">
-                                      |
-                                    </span>
-                                    <span className="text-gray-500 font-medium">
-                                      Actual:
-                                    </span>
-                                    <span className="font-bold text-emerald-700">
-                                      {day.bundleActual ?? 0}
-                                    </span>
-                                  </div>
-                                )}
+                                  typeof day.bundleActual === "number")) ||
+                                typeof day.avgPurity === "number") &&
+                                (() => {
+                                  const hasDayBundles =
+                                    bundleStats.hasData &&
+                                    (typeof day.bundlePlanned === "number" ||
+                                      typeof day.bundleActual === "number");
+                                  const hasDayPurity =
+                                    typeof day.avgPurity === "number";
+                                  const dayBundleLost = Math.max(
+                                    0,
+                                    (day.bundlePlanned ?? 0) -
+                                      (day.bundleActual ?? 0),
+                                  );
+                                  const formattedPurity = hasDayPurity
+                                    ? `${Number(day.avgPurity.toFixed(2))}%`
+                                    : null;
+                                  const tooltipParts = [];
+                                  if (hasDayBundles) {
+                                    tooltipParts.push(
+                                      `Planned: ${day.bundlePlanned ?? 0}`,
+                                      `Actual: ${day.bundleActual ?? 0}`,
+                                      `Lost: ${dayBundleLost}`,
+                                    );
+                                  }
+                                  if (hasDayPurity) {
+                                    tooltipParts.push(
+                                      `Avg Purity: ${formattedPurity}`,
+                                    );
+                                  }
+                                  return (
+                                    <div
+                                      className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-gray-700"
+                                      title={tooltipParts.join(" | ")}
+                                    >
+                                      <Package className="size-3.5 text-blue-600 shrink-0" />
+                                      {hasDayBundles && (
+                                        <>
+                                          <span className="font-bold text-gray-900">
+                                            Bundles:
+                                          </span>
+                                          <span className="text-gray-500 font-medium">
+                                            Planned:
+                                          </span>
+                                          <span className="font-bold text-blue-600">
+                                            {day.bundlePlanned ?? 0}
+                                          </span>
+                                          <span className="text-gray-300 mx-0.5">
+                                            |
+                                          </span>
+                                          <span className="text-gray-500 font-medium">
+                                            Actual:
+                                          </span>
+                                          <span className="font-bold text-emerald-700">
+                                            {day.bundleActual ?? 0}
+                                          </span>
+                                          <span className="text-gray-300 mx-0.5">
+                                            |
+                                          </span>
+                                          <span className="text-gray-500 font-medium">
+                                            Lost:
+                                          </span>
+                                          <span className="font-bold text-rose-600">
+                                            {dayBundleLost}
+                                          </span>
+                                        </>
+                                      )}
+                                      {hasDayPurity && (
+                                        <>
+                                          {hasDayBundles && (
+                                            <span className="text-gray-300 mx-0.5">
+                                              |
+                                            </span>
+                                          )}
+                                          <span className="text-gray-500 font-medium">
+                                            Avg Purity:
+                                          </span>
+                                          <span className="font-bold text-indigo-600">
+                                            {formattedPurity}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               {/* {daySec.hoursLost > 0 && (
                                 <span
                                   className="hidden md:inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-md text-xs bg-amber-50 text-amber-900 border border-amber-200"

@@ -555,6 +555,13 @@ export const normalizeAllDailyData = (weeklyData) => {
             ? dayBundleRecord.bundleActual
             : null;
 
+      const avgPurity =
+        typeof record?.avgPurity === "number"
+          ? record.avgPurity
+          : typeof dayBundleRecord?.avgPurity === "number"
+            ? dayBundleRecord.avgPurity
+            : null;
+
       allDays.push({
         dateStr,
         dateObj: d,
@@ -563,6 +570,7 @@ export const normalizeAllDailyData = (weeklyData) => {
         dateLabelAlt,
         bundlePlanned,
         bundleActual,
+        avgPurity,
         productionHoursLost: record?.productionHoursLost ?? 0,
         secondaryProductionHoursLost:
           Number(
